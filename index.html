@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="800" height="400"></canvas>
+  <canvas id="gameCanvas" width="600" height="300"></canvas>
 
   <script>
     const canvas = document.getElementById("gameCanvas");
@@ -28,39 +28,53 @@
     // 玩家（小恐龙）
     const player = {
       x: 50,
-      y: 300,
-      size: 50,
-      velocity: 0,
-      gravity: 0.5,
-      isJumping: false
+      y: 0,
+      size: 30,
+      dy: 0,
+      gravity: 0.6,
+      jumpPower: -12,
+      onGround: true
     };
 
-    const dinoImg = new Image();
-    dinoImg.src = "dino.png"; // 你要准备一张 dino.png 放同文件夹
-
     let obstacles = [];
-    let gameOver = false;
     let score = 0;
-
-    // 跳跃函数
-    function jump() {
-      if (!player.isJumping) {
-        player.isJumping = true;
-        player.velocity = -10;
-      }
-    }
+    let gameOver = false;
 
     // 键盘控制
     document.addEventListener("keydown", e => {
-      if (e.code === "Space") jump();
+      if (e.code === "Space") {
+        if (gameOver) resetGame();
+        else jump();
+      }
     });
 
-    // 手机触摸控制
+    // 手机触屏控制
     document.addEventListener("touchstart", () => {
-      jump();
+      if (gameOver) resetGame();
+      else jump();
     });
 
-    // 碰撞检测
+    function jump() {
+      if (player.onGround) {
+        player.dy = player.jumpPower;
+        player.onGround = false;
+      }
+    }
+
+    function spawnObstacle() {
+      const size = Math.random() * 20 + 20;
+      obstacles.push({ x: canvas.width, y: canvas.height - size, w: size, h: size });
+    }
+
+    function resetGame() {
+      obstacles = [];
+      score = 0;
+      player.y = canvas.height - player.size;
+      player.dy = 0;
+      player.onGround = true;
+      gameOver = false;
+    }
+
     function isCollide(a, b) {
       return (
         a.x < b.x + b.w &&
@@ -70,69 +84,65 @@
       );
     }
 
-    // 生成障碍物
-    function spawnObstacle() {
-      const h = Math.random() * 50 + 30;
-      obstacles.push({
-        x: canvas.width,
-        y: canvas.height - h,
-        w: 20,
-        h: h
-      });
-    }
-
-    // 更新游戏
     function update() {
-      if (gameOver) return;
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 更新玩家位置
-      player.y += player.velocity;
-      player.velocity += player.gravity;
+      if (!gameOver) {
+        // 玩家重力
+        player.y += player.dy;
+        player.dy += player.gravity;
 
-      if (player.y >= 300) {
-        player.y = 300;
-        player.isJumping = false;
+        // 落地检测
+        if (player.y + player.size >= canvas.height) {
+          player.y = canvas.height - player.size;
+          player.dy = 0;
+          player.onGround = true;
+        }
+
+        // 障碍物逻辑
+        obstacles.forEach(o => {
+          o.x -= 5;
+          ctx.fillStyle = "green";
+          ctx.fillRect(o.x, o.y, o.w, o.h);
+
+          if (isCollide(player, o)) {
+            gameOver = true;
+          }
+        });
+        obstacles = obstacles.filter(o => o.x + o.w > 0);
+
+        // 分数
+        score++;
       }
 
-      // 画小恐龙
-      ctx.drawImage(dinoImg, player.x, player.y, player.size, player.size);
+      // 画玩家
+      ctx.fillStyle = "red";
+      ctx.fillRect(player.x, player.y, player.size, player.size);
 
-      // 更新障碍物
-      ctx.fillStyle = "green";
-      obstacles.forEach(o => {
-        o.x -= 4;
-        ctx.fillRect(o.x, o.y, o.w, o.h);
-
-        if (isCollide(player, o)) {
-          gameOver = true;
-          alert("Game Over! 你的得分: " + score);
-        }
-      });
-
-      // 移除离开画布的障碍物
-      obstacles = obstacles.filter(o => o.x + o.w > 0);
-
-      // 计分
-      score++;
+      // 显示分数
       ctx.fillStyle = "white";
       ctx.font = "20px Arial";
-      ctx.fillText("Score: " + score, 10, 30);
+      ctx.fillText("Score: " + score, 10, 25);
+
+      if (gameOver) {
+        ctx.fillStyle = "yellow";
+        ctx.font = "30px Arial";
+        ctx.fillText("Game Over!", canvas.width / 2 - 80, canvas.height / 2);
+        ctx.font = "20px Arial";
+        ctx.fillText("Press SPACE or TAP to restart", canvas.width / 2 - 130, canvas.height / 2 + 40);
+      }
 
       requestAnimationFrame(update);
     }
 
     // 定时生成障碍物
-    setInterval(spawnObstacle, 2000);
+    setInterval(() => {
+      if (!gameOver) spawnObstacle();
+    }, 2000);
 
-    // 等恐龙图片加载完成才开始
-    dinoImg.onload = () => {
-      update();
-    };
+    // 初始化
+    resetGame();
+    update();
   </script>
 </body>
 </html>
-
-
-

@@ -155,15 +155,37 @@
       if (!gameOver) spawnObstacle();
     }, 2000);
 
-    // 等图片加载好再开始
-    bgImg.onload = () => {
-      dinoImg.onload = () => {
+    // === 新增：图片加载检测 ===
+    let resourcesToLoad = 2 + cactusImgs.length; // bg, dino, cactus1-3
+    let resourcesLoaded = 0;
+
+    function resourceLoaded() {
+      resourcesLoaded++;
+      console.log("Loaded:", resourcesLoaded, "/", resourcesToLoad);
+      if (resourcesLoaded >= resourcesToLoad) {
         gameLoop();
-      };
-    };
+      }
+    }
+
+    function resourceError(name) {
+      console.error("❌ Failed to load:", name);
+      resourceLoaded(); // 即使失败也继续，避免卡死
+    }
+
+    dinoImg.onload = resourceLoaded;
+    dinoImg.onerror = () => resourceError("dino.png");
+
+    bgImg.onload = resourceLoaded;
+    bgImg.onerror = () => resourceError("bg.png");
+
+    cactusImgs.forEach((img, i) => {
+      img.onload = resourceLoaded;
+      img.onerror = () => resourceError("cactus" + (i+1) + ".png");
+    });
   </script>
 </body>
 </html>
+
 
 
 

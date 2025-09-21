@@ -10,12 +10,11 @@
       justify-content: center;
       align-items: center;
       height: 100vh;
-      background: #f0f0f0;
+      background: #222;
     }
     canvas {
       border: 2px solid #333;
       background: #fff;
-      touch-action: manipulation; /* 防止手机浏览器双击放大 */
     }
   </style>
 </head>
@@ -26,22 +25,36 @@
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    // 游戏参数
     let gravity = 0.6;
     let jumpPower = -12;
     let obstacles = [];
     let score = 0;
     let gameOver = false;
 
-    // 重开按钮
-    let restartBtn = { x: 340, y: 170, width: 140, height: 60 };
-
-    // 加载图片
+    // === 图片 ===
     const dinoImg = new Image();
-    dinoImg.src = "dino.png"; // 替换为你的小恐龙图片
+    dinoImg.src = "dino.png";
 
-    const cactusImg = new Image();
-    cactusImg.src = "cactus.png"; // 替换为障碍物图片
+    const bgImg = new Image();
+    bgImg.src = "bg.png";
+
+    const cactusImgs = [];
+    for (let i = 1; i <= 3; i++) {
+      let img = new Image();
+      img.src = `cactus${i}.png`; // cactus1.png, cactus2.png, cactus3.png
+      cactusImgs.push(img);
+    }
+
+    // 背景
+    let bgX = 0;
+    function drawBackground() {
+      bgX -= 2; // 背景滚动速度
+      if (bgX <= -canvas.width) {
+        bgX = 0;
+      }
+      ctx.drawImage(bgImg, bgX, 0, canvas.width, canvas.height);
+      ctx.drawImage(bgImg, bgX + canvas.width, 0, canvas.width, canvas.height);
+    }
 
     // 恐龙
     const dino = {
@@ -70,36 +83,32 @@
 
     // 生成障碍物
     function spawnObstacle() {
+      let randomImg = cactusImgs[Math.floor(Math.random() * cactusImgs.length)];
       obstacles.push({
         x: 800,
         y: 210,
         width: 40,
         height: 40,
+        img: randomImg
       });
-    }
-
-    // 画重开按钮
-    function drawRestartButton() {
-      ctx.fillStyle = "#4CAF50";
-      ctx.fillRect(restartBtn.x, restartBtn.y, restartBtn.width, restartBtn.height);
-      ctx.fillStyle = "#fff";
-      ctx.font = "24px Arial";
-      ctx.fillText("Restart", restartBtn.x + 25, restartBtn.y + 38);
     }
 
     // 游戏循环
     function gameLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 恐龙更新
+      // 背景
+      drawBackground();
+
+      // 恐龙
       dino.update();
       dino.draw();
 
-      // 障碍物更新
+      // 障碍物
       for (let i = obstacles.length - 1; i >= 0; i--) {
         let ob = obstacles[i];
         ob.x -= 5;
-        ctx.drawImage(cactusImg, ob.x, ob.y, ob.width, ob.height);
+        ctx.drawImage(ob.img, ob.x, ob.y, ob.width, ob.height);
 
         // 碰撞检测
         if (
@@ -117,7 +126,7 @@
         }
       }
 
-      // 分数显示
+      // 分数
       ctx.fillStyle = "#333";
       ctx.font = "20px Arial";
       ctx.fillText("Score: " + score, 10, 20);
@@ -127,51 +136,19 @@
       } else {
         ctx.fillStyle = "red";
         ctx.font = "40px Arial";
-        ctx.fillText("Game Over", 300, 140);
-        drawRestartButton();
+        ctx.fillText("Game Over", 300, 150);
       }
     }
 
-    // 控制（电脑）
+    // 控制
     document.addEventListener("keydown", e => {
       if (e.code === "Space" || e.code === "ArrowUp") {
         dino.jump();
       }
     });
-
-    // 控制（手机）
     document.addEventListener("touchstart", () => {
-      if (!gameOver) {
-        dino.jump();
-      }
+      dino.jump();
     });
-
-    // 点击重开按钮
-    canvas.addEventListener("click", (e) => {
-      if (gameOver) {
-        const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        if (
-          mx >= restartBtn.x &&
-          mx <= restartBtn.x + restartBtn.width &&
-          my >= restartBtn.y &&
-          my <= restartBtn.y + restartBtn.height
-        ) {
-          restartGame();
-        }
-      }
-    });
-
-    // 重开游戏
-    function restartGame() {
-      obstacles = [];
-      score = 0;
-      gameOver = false;
-      dino.y = 200;
-      dino.vy = 0;
-      gameLoop();
-    }
 
     // 定时生成障碍物
     setInterval(() => {
@@ -179,13 +156,14 @@
     }, 2000);
 
     // 等图片加载好再开始
-    dinoImg.onload = () => {
-      cactusImg.onload = () => {
+    bgImg.onload = () => {
+      dinoImg.onload = () => {
         gameLoop();
       };
     };
   </script>
 </body>
 </html>
+
 
 

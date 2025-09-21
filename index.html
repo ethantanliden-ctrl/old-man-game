@@ -11,24 +11,40 @@
       align-items: center;
       height: 100vh;
       background: #222;
+      flex-direction: column;
     }
     canvas {
       border: 2px solid #333;
       background: #fff;
+      display: block;
+    }
+    #restartBtn {
+      display: none;
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      border-radius: 5px;
+      background: #4CAF50;
+      color: white;
     }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas" width="800" height="300"></canvas>
+  <button id="restartBtn">重新开始</button>
 
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
+    const restartBtn = document.getElementById("restartBtn");
 
     let gravity = 0.6;
     let jumpPower = -12;
     let obstacles = [];
     let score = 0;
+    let highScore = localStorage.getItem("highScore") || 0;
     let gameOver = false;
 
     // === 图片 ===
@@ -41,14 +57,14 @@
     const cactusImgs = [];
     for (let i = 1; i <= 3; i++) {
       let img = new Image();
-      img.src = `cactus${i}.png`; // cactus1.png, cactus2.png, cactus3.png
+      img.src = `cactus${i}.png`;
       cactusImgs.push(img);
     }
 
     // 背景
     let bgX = 0;
     function drawBackground() {
-      bgX -= 2; // 背景滚动速度
+      bgX -= 2;
       if (bgX <= -canvas.width) {
         bgX = 0;
       }
@@ -100,6 +116,10 @@
       // 背景
       drawBackground();
 
+      // 跑道
+      ctx.fillStyle = "#666";
+      ctx.fillRect(0, 260, canvas.width, 5);
+
       // 恐龙
       dino.update();
       dino.draw();
@@ -118,6 +138,11 @@
           dino.y + dino.height > ob.y
         ) {
           gameOver = true;
+          if (score > highScore) {
+            highScore = score;
+            localStorage.setItem("highScore", highScore);
+          }
+          restartBtn.style.display = "inline-block";
         }
 
         if (ob.x + ob.width < 0) {
@@ -130,6 +155,7 @@
       ctx.fillStyle = "#333";
       ctx.font = "20px Arial";
       ctx.fillText("Score: " + score, 10, 20);
+      ctx.fillText("High Score: " + highScore, 650, 20);
 
       if (!gameOver) {
         requestAnimationFrame(gameLoop);
@@ -143,50 +169,61 @@
     // 控制
     document.addEventListener("keydown", e => {
       if (e.code === "Space" || e.code === "ArrowUp") {
-        dino.jump();
+        if (!gameOver) {
+          dino.jump();
+        }
       }
     });
     document.addEventListener("touchstart", () => {
-      dino.jump();
+      if (!gameOver) {
+        dino.jump();
+      }
     });
 
     // 定时生成障碍物
-    setInterval(() => {
-      if (!gameOver) spawnObstacle();
-    }, 2000);
+    let obstacleInterval;
+    function startSpawning() {
+      obstacleInterval = setInterval(() => {
+        if (!gameOver) spawnObstacle();
+      }, 2000);
+    }
 
-    // === 新增：图片加载检测 ===
-    let resourcesToLoad = 2 + cactusImgs.length; // bg, dino, cactus1-3
+    // 重启游戏
+    function restartGame() {
+      gameOver = false;
+      score = 0;
+      obstacles = [];
+      bgX = 0;
+      dino.y = 200;
+      dino.vy = 0;
+      restartBtn.style.display = "none";
+      clearInterval(obstacleInterval);
+      startSpawning();
+      gameLoop();
+    }
+
+    restartBtn.addEventListener("click", restartGame);
+    document.addEventListener("keydown", e => {
+      if (gameOver && e.code === "Enter") {
+        restartGame();
+      }
+    });
+
+    // === 图片加载检测 ===
+    let resourcesToLoad = 2 + cactusImgs.length;
     let resourcesLoaded = 0;
 
     function resourceLoaded() {
       resourcesLoaded++;
-      console.log("Loaded:", resourcesLoaded, "/", resourcesToLoad);
       if (resourcesLoaded >= resourcesToLoad) {
+        startSpawning();
         gameLoop();
       }
     }
 
-    function resourceError(name) {
-      console.error("❌ Failed to load:", name);
-      resourceLoaded(); // 即使失败也继续，避免卡死
-    }
-
     dinoImg.onload = resourceLoaded;
-    dinoImg.onerror = () => resourceError("dino.png");
-
     bgImg.onload = resourceLoaded;
-    bgImg.onerror = () => resourceError("bg.png");
-
-    cactusImgs.forEach((img, i) => {
-      img.onload = resourceLoaded;
-      img.onerror = () => resourceError("cactus" + (i+1) + ".png");
-    });
+    cactusImgs.forEach(img => (img.onload = resourceLoaded));
   </script>
 </body>
 </html>
-
-
-
-
-

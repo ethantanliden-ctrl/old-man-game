@@ -31,6 +31,11 @@
   <canvas id="gameCanvas"></canvas>
   <button id="restartBtn">重新开始</button>
 
+  <!-- 🎵 音频文件 -->
+  <audio id="bgm" src="bgm.mp3" loop></audio>
+  <audio id="jumpSound" src="jump.mp3"></audio>
+  <audio id="hitSound" src="hit.mp3"></audio>
+
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
@@ -67,6 +72,17 @@
       cactusImgs.push(img);
     }
 
+    // === 音频 ===
+    const bgm = document.getElementById("bgm");
+    const jumpSound = document.getElementById("jumpSound");
+    const hitSound = document.getElementById("hitSound");
+
+    function playBgm() {
+      if (bgm.paused) {
+        bgm.play().catch(err => console.log("音乐被拦截:", err));
+      }
+    }
+
     // 背景
     let bgX = 0;
     function drawBackground() {
@@ -94,6 +110,8 @@
       jump: function() {
         if (this.y >= canvas.height - 100) {
           this.vy = jumpPower;
+          jumpSound.play(); // 跳跃音效
+          playBgm(); // 第一次跳跃时启动背景音乐
         }
       },
       update: function() {
@@ -143,12 +161,14 @@
           dino.y + dino.height > ob.y
         ) {
           gameOver = true;
+          hitSound.play(); // 撞到音效
+          bgm.pause(); // 停止背景音乐
         }
 
         if (ob.x + ob.width < 0) {
           obstacles.splice(i, 1);
           score++;
-          speed = 5 + Math.floor(score / 5); // 难度增加
+          speed = 5 + Math.floor(score / 5);
           spawnInterval = Math.max(800, 2000 - score * 50);
         }
       }
@@ -191,6 +211,8 @@
       spawnInterval = 2000;
       gameOver = false;
       document.getElementById("restartBtn").style.display = "none";
+      bgm.currentTime = 0; // 重置音乐
+      bgm.play(); // 重新播放
       spawnTimer = setInterval(() => {
         if (!gameOver) spawnObstacle();
       }, spawnInterval);
@@ -218,3 +240,4 @@
   </script>
 </body>
 </html>
+

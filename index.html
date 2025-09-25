@@ -16,12 +16,28 @@
       border: 2px solid #333;
       background: #fff;
     }
+    #restartBtn {
+      position: absolute;
+      top: 60%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 10px 20px;
+      font-size: 18px;
+      display: none;
+    }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
+  <button id="restartBtn">重新开始</button>
+
+  <!-- 🎵 音频 -->
+  <audio id="bgm" src="bgm.mp3" loop></audio>
+  <audio id="jumpSound" src="jump.mp3"></audio>
+  <audio id="hitSound" src="hit.mp3"></audio>
 
   <script type="module">
+    // === Firebase 导入 ===
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
@@ -45,34 +61,68 @@
     // === 游戏变量 ===
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
-    canvas.width = 800;
-    canvas.height = 300;
 
-    let playerId;
-    let players = {}; // 存所有玩家
+    function resizeCanvas() {
+      canvas.width = window.innerWidth > 800 ? 800 : window.innerWidth - 20;
+      canvas.height = window.innerHeight > 400 ? 300 : window.innerHeight - 100;
+    }
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
 
-    // === 玩家对象 ===
-    function createPlayer(x, y, color = "green") {
-      return { x, y, vy: 0, width: 40, height: 40, color, score: 0 };
+    let gravity = 0.6;
+    let jumpPower = -12;
+    let obstacles = [];
+    let powerUps = [];
+    let speed = 5;
+    let spawnInterval = 2000;
+    let spawnTimer;
+    let gameOver = false;
+
+    // === 图片 ===
+    const dinoImg = new Image();
+    dinoImg.src = "dino.png";
+    const bgImg = new Image();
+    bgImg.src = "bg.png";
+    const cactusImgs = [];
+    for (let i = 1; i <= 3; i++) {
+      let img = new Image();
+      img.src = `cactus${i}.png`;
+      cactusImgs.push(img);
     }
 
-    // 本地玩家
-    let localPlayer = createPlayer(50, canvas.height - 60, "red");
+    // === 音频 ===
+    const bgm = document.getElementById("bgm");
+    const jumpSound = document.getElementById("jumpSound");
+    const hitSound = document.getElementById("hitSound");
 
-    // === Firebase 登录 ===
+    function playBgm() {
+      if (bgm.paused) {
+        bgm.play().catch(err => console.log("音乐被拦截:", err));
+      }
+    }
+
+    // === 玩家数据 ===
+    let playerId;
+    let players = {};
+    let localPlayer = {
+      x: 50,
+      y: canvas.height - 100,
+      width: 50,
+      height: 50,
+      vy: 0,
+      score: 0,
+      color: "red"
+    };
+
+    // 匿名登录
     signInAnonymously(auth).then(() => {
       playerId = "player_" + Math.floor(Math.random() * 10000);
       console.log("登录成功:", playerId);
 
-      // 初始化上传自己
-      set(ref(db, "rooms/room1/players/" + playerId), {
-        x: localPlayer.x,
-        y: localPlayer.y,
-        score: 0,
-        color: localPlayer.color
-      });
+      // 初始化
+      set(ref(db, "rooms/room1/players/" + playerId), localPlayer);
 
-      // 退出清除
+      // 离开清理
       window.addEventListener("beforeunload", () => {
         remove(ref(db, "rooms/room1/players/" + playerId));
       });
@@ -86,50 +136,77 @@
     // === 控制 ===
     document.addEventListener("keydown", e => {
       if (e.code === "Space" || e.code === "ArrowUp") {
-        if (localPlayer.y >= canvas.height - 60) {
-          localPlayer.vy = -12;
+        if (localPlayer.y >= canvas.height - 100) {
+          localPlayer.vy = jumpPower;
+          jumpSound.play();
+          playBgm();
         }
       }
     });
+    document.addEventListener("touchstart", () => {
+      if (localPlayer.y >= canvas.height - 100) {
+        localPlayer.vy = jumpPower;
+        jumpSound.play();
+        playBgm();
+      }
+    });
+
+    // === 背景 ===
+    let bgX = 0;
+    function drawBackground() {
+      bgX -= 2;
+      if (bgX <= -canvas.width) bgX = 0;
+      ctx.drawImage(bgImg, bgX, 0, canvas.width, canvas.height);
+      ctx.drawImage(bgImg, bgX + canvas.width, 0, canvas.width, canvas.height);
+    }
+
+    // === 更新玩家 ===
+    function updateLocalPlayer() {
+      localPlayer.y += localPlayer.vy;
+      localPlayer.vy += gravity;
+      if (localPlayer.y > canvas.height - 100) {
+        localPlayer.y = canvas.height - 100;
+        localPlayer.vy = 0;
+      }
+      if (!gameOver) localPlayer.score++;
+
+      // 上传到 Firebase
+      if (playerId) {
+        set(ref(db, "rooms/room1/players/" + playerId), localPlayer);
+      }
+    }
+
+    function drawPlayers() {
+      for (let id in players) {
+        const p = players[id];
+        ctx.fillStyle = p.color || "green";
+        ctx.fillRect(p.x, p.y, p.width, p.height);
+        ctx.fillStyle = "black";
+        ctx.fillText(id, p.x, p.y - 10);
+        ctx.fillText("Score: " + p.score, p.x, p.y - 25);
+      }
+    }
 
     // === 游戏循环 ===
     function gameLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 更新本地玩家物理
-      localPlayer.y += localPlayer.vy;
-      localPlayer.vy += 0.6;
-      if (localPlayer.y > canvas.height - 60) {
-        localPlayer.y = canvas.height - 60;
-        localPlayer.vy = 0;
+      drawBackground();
+      updateLocalPlayer();
+      drawPlayers();
+
+      if (!gameOver) {
+        requestAnimationFrame(gameLoop);
+      } else {
+        ctx.fillStyle = "red";
+        ctx.font = "40px Arial";
+        ctx.fillText("Game Over", canvas.width / 2 - 100, canvas.height / 2);
       }
-
-      localPlayer.score++;
-
-      // 把自己状态写到 Firebase
-      if (playerId) {
-        set(ref(db, "rooms/room1/players/" + playerId), {
-          x: localPlayer.x,
-          y: localPlayer.y,
-          score: localPlayer.score,
-          color: localPlayer.color
-        });
-      }
-
-      // 绘制所有玩家
-      for (let id in players) {
-        const p = players[id];
-        ctx.fillStyle = p.color || "green";
-        ctx.fillRect(p.x, p.y, 40, 40);
-        ctx.fillStyle = "black";
-        ctx.fillText(id, p.x, p.y - 5);
-        ctx.fillText("Score: " + p.score, p.x, p.y - 20);
-      }
-
-      requestAnimationFrame(gameLoop);
     }
 
     gameLoop();
   </script>
 </body>
 </html>
+
+

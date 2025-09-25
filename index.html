@@ -16,280 +16,120 @@
       border: 2px solid #333;
       background: #fff;
     }
-    #restartBtn {
-      position: absolute;
-      top: 60%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      padding: 10px 20px;
-      font-size: 18px;
-      display: none;
-    }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
-  <button id="restartBtn">重新开始</button>
-
-  <!-- 🎵 音频文件 -->
-  <audio id="bgm" src="bgm.mp3" loop></audio>
-  <audio id="jumpSound" src="jump.mp3"></audio>
-  <audio id="hitSound" src="hit.mp3"></audio>
 
   <script type="module">
-    // === Firebase 部分 ===
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
     import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
+    // === Firebase 配置 ===
     const firebaseConfig = {
-      apiKey: "你的API_KEY",
-      authDomain: "你的项目ID.firebaseapp.com",
-      databaseURL: "https://你的项目ID.firebaseio.com",
-      projectId: "你的项目ID",
-      storageBucket: "你的项目ID.appspot.com",
-      messagingSenderId: "xxx",
-      appId: "xxx"
+      apiKey: "AIzaSyCfgSlZ9w56txH3UK4iYvMiCbbES_JvLNw",
+      authDomain: "my-game-52f18.firebaseapp.com",
+      databaseURL: "https://my-game-52f18-default-rtdb.firebaseio.com",
+      projectId: "my-game-52f18",
+      storageBucket: "my-game-52f18.appspot.com",
+      messagingSenderId: "407828942891",
+      appId: "1:407828942891:web:b27dcb37646a31bc5e5a6e",
+      measurementId: "G-TW6LTQHBZB"
     };
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const auth = getAuth();
 
-    let playerId;
-    let roomId = "room1";
-    let players = {}; // 保存房间所有玩家的数据
+    // === 游戏变量 ===
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = 800;
+    canvas.height = 300;
 
+    let playerId;
+    let players = {}; // 存所有玩家
+
+    // === 玩家对象 ===
+    function createPlayer(x, y, color = "green") {
+      return { x, y, vy: 0, width: 40, height: 40, color, score: 0 };
+    }
+
+    // 本地玩家
+    let localPlayer = createPlayer(50, canvas.height - 60, "red");
+
+    // === Firebase 登录 ===
     signInAnonymously(auth).then(() => {
       playerId = "player_" + Math.floor(Math.random() * 10000);
       console.log("登录成功:", playerId);
 
-      // 初始写入玩家
-      set(ref(db, `rooms/${roomId}/players/${playerId}`), {
-        x: 50,
-        y: 200,
-        score: 0
+      // 初始化上传自己
+      set(ref(db, "rooms/room1/players/" + playerId), {
+        x: localPlayer.x,
+        y: localPlayer.y,
+        score: 0,
+        color: localPlayer.color
       });
 
-      // 离开时删除玩家
+      // 退出清除
       window.addEventListener("beforeunload", () => {
-        remove(ref(db, `rooms/${roomId}/players/${playerId}`));
+        remove(ref(db, "rooms/room1/players/" + playerId));
       });
 
-      // 监听房间所有玩家
-      const roomRef = ref(db, `rooms/${roomId}/players`);
-      onValue(roomRef, (snapshot) => {
+      // 监听所有玩家
+      onValue(ref(db, "rooms/room1/players"), (snapshot) => {
         players = snapshot.val() || {};
       });
     });
 
-    // === 游戏部分 ===
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-
-    function resizeCanvas() {
-      canvas.width = window.innerWidth > 800 ? 800 : window.innerWidth - 20;
-      canvas.height = window.innerHeight > 400 ? 300 : window.innerHeight - 100;
-    }
-    resizeCanvas();
-    window.addEventListener("resize", resizeCanvas);
-
-    let gravity = 0.6;
-    let jumpPower = -12;
-    let obstacles = [];
-    let powerUps = [];
-    let score = 0;
-    let highScore = localStorage.getItem("highScore") || 0;
-    let gameOver = false;
-    let speed = 5;
-    let spawnInterval = 2000;
-    let spawnTimer;
-
-    const dinoImg = new Image();
-    dinoImg.src = "dino.png";
-    const bgImg = new Image();
-    bgImg.src = "bg.png";
-    const cactusImgs = [];
-    for (let i = 1; i <= 3; i++) {
-      let img = new Image();
-      img.src = `cactus${i}.png`;
-      cactusImgs.push(img);
-    }
-
-    const bgm = document.getElementById("bgm");
-    const jumpSound = document.getElementById("jumpSound");
-    const hitSound = document.getElementById("hitSound");
-
-    function playBgm() {
-      if (bgm.paused) {
-        bgm.play().catch(err => console.log("音乐被拦截:", err));
-      }
-    }
-
-    let bgX = 0;
-    function drawBackground() {
-      bgX -= 2;
-      if (bgX <= -canvas.width) bgX = 0;
-      ctx.drawImage(bgImg, bgX, 0, canvas.width, canvas.height);
-      ctx.drawImage(bgImg, bgX + canvas.width, 0, canvas.width, canvas.height);
-    }
-
-    function drawGround() {
-      ctx.fillStyle = "#444";
-      ctx.fillRect(0, canvas.height - 40, canvas.width, 5);
-    }
-
-    const dino = {
-      x: 50,
-      y: canvas.height - 100,
-      width: 50,
-      height: 50,
-      vy: 0,
-      jump: function() {
-        if (this.y >= canvas.height - 100) {
-          this.vy = jumpPower;
-          jumpSound.play();
-          playBgm();
-        }
-      },
-      update: function() {
-        this.y += this.vy;
-        this.vy += gravity;
-        if (this.y > canvas.height - 100) {
-          this.y = canvas.height - 100;
-          this.vy = 0;
-        }
-      },
-      draw: function() {
-        ctx.drawImage(dinoImg, this.x, this.y, this.width, this.height);
-      }
-    };
-
-    function spawnObstacle() {
-      let randomImg = cactusImgs[Math.floor(Math.random() * cactusImgs.length)];
-      obstacles.push({
-        x: canvas.width,
-        y: canvas.height - 90,
-        width: 40,
-        height: 40,
-        img: randomImg,
-        speed: speed
-      });
-    }
-
-    function updateObstacles() {
-      for (let ob of obstacles) {
-        ob.x -= ob.speed;
-        ctx.drawImage(ob.img, ob.x, ob.y, ob.width, ob.height);
-
-        if (
-          dino.x < ob.x + ob.width &&
-          dino.x + dino.width > ob.x &&
-          dino.y < ob.y + ob.height &&
-          dino.y + dino.height > ob.y
-        ) {
-          gameOver = true;
-          hitSound.play();
-          bgm.pause();
+    // === 控制 ===
+    document.addEventListener("keydown", e => {
+      if (e.code === "Space" || e.code === "ArrowUp") {
+        if (localPlayer.y >= canvas.height - 60) {
+          localPlayer.vy = -12;
         }
       }
-      obstacles = obstacles.filter(o => o.x + o.width > 0);
-    }
+    });
 
-    let effects = { invincible: false, doubleScore: false };
-
+    // === 游戏循环 ===
     function gameLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawBackground();
-      drawGround();
 
-      dino.update();
-      dino.draw();
+      // 更新本地玩家物理
+      localPlayer.y += localPlayer.vy;
+      localPlayer.vy += 0.6;
+      if (localPlayer.y > canvas.height - 60) {
+        localPlayer.y = canvas.height - 60;
+        localPlayer.vy = 0;
+      }
 
-      updateObstacles();
+      localPlayer.score++;
 
-      ctx.fillStyle = "#333";
-      ctx.font = "20px Arial";
-      ctx.fillText("Score: " + score, 10, 20);
-      ctx.fillText("High Score: " + highScore, 10, 40);
-
-      // ✅ 上传自己数据
+      // 把自己状态写到 Firebase
       if (playerId) {
-        set(ref(db, `rooms/${roomId}/players/${playerId}`), {
-          x: dino.x,
-          y: dino.y,
-          score: score
+        set(ref(db, "rooms/room1/players/" + playerId), {
+          x: localPlayer.x,
+          y: localPlayer.y,
+          score: localPlayer.score,
+          color: localPlayer.color
         });
       }
 
-      // ✅ 绘制对手
+      // 绘制所有玩家
       for (let id in players) {
-        if (id !== playerId) {
-          let p = players[id];
-          ctx.fillStyle = "red";
-          ctx.fillRect(p.x, p.y, 50, 50); // 用红色方块代替
-          ctx.fillStyle = "black";
-          ctx.fillText(`P2 Score: ${p.score}`, p.x, p.y - 10);
-        }
+        const p = players[id];
+        ctx.fillStyle = p.color || "green";
+        ctx.fillRect(p.x, p.y, 40, 40);
+        ctx.fillStyle = "black";
+        ctx.fillText(id, p.x, p.y - 5);
+        ctx.fillText("Score: " + p.score, p.x, p.y - 20);
       }
 
-      if (!gameOver) {
-        score += 1;
-        requestAnimationFrame(gameLoop);
-      } else {
-        ctx.fillStyle = "red";
-        ctx.font = "40px Arial";
-        ctx.fillText("Game Over", canvas.width / 2 - 100, canvas.height / 2);
-        document.getElementById("restartBtn").style.display = "block";
-        clearInterval(spawnTimer);
-        if (score > highScore) {
-          highScore = score;
-          localStorage.setItem("highScore", highScore);
-        }
-      }
+      requestAnimationFrame(gameLoop);
     }
 
-    document.addEventListener("keydown", e => {
-      if (e.code === "Space" || e.code === "ArrowUp") {
-        dino.jump();
-      }
-    });
-    document.addEventListener("touchstart", () => {
-      dino.jump();
-    });
-
-    document.getElementById("restartBtn").addEventListener("click", () => {
-      obstacles = [];
-      score = 0;
-      speed = 5;
-      gameOver = false;
-      document.getElementById("restartBtn").style.display = "none";
-      bgm.currentTime = 0;
-      bgm.play();
-      spawnTimer = setInterval(spawnObstacle, spawnInterval);
-      gameLoop();
-    });
-
-    let resourcesToLoad = 2 + cactusImgs.length;
-    let resourcesLoaded = 0;
-    function resourceLoaded() {
-      resourcesLoaded++;
-      if (resourcesLoaded >= resourcesToLoad) {
-        spawnTimer = setInterval(spawnObstacle, spawnInterval);
-        gameLoop();
-      }
-    }
-    [dinoImg, bgImg, ...cactusImgs].forEach(img => {
-      img.onload = resourceLoaded;
-      img.onerror = resourceLoaded;
-    });
+    gameLoop();
   </script>
 </body>
 </html>
-
-
-
-
-
-
-

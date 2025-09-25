@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8">
-  <title>小恐龙游戏 - 强化版</title>
+  <title>小恐龙游戏 - 联机版</title>
   <style>
     body {
       margin: 0;
@@ -36,11 +36,57 @@
   <audio id="jumpSound" src="jump.mp3"></audio>
   <audio id="hitSound" src="hit.mp3"></audio>
 
-  <script>
+  <script type="module">
+    // === Firebase 部分 ===
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "你的API_KEY",
+      authDomain: "你的项目ID.firebaseapp.com",
+      databaseURL: "https://你的项目ID.firebaseio.com",
+      projectId: "你的项目ID",
+      storageBucket: "你的项目ID.appspot.com",
+      messagingSenderId: "xxx",
+      appId: "xxx"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth();
+
+    let playerId;
+    let roomId = "room1";
+    let players = {}; // 保存房间所有玩家的数据
+
+    signInAnonymously(auth).then(() => {
+      playerId = "player_" + Math.floor(Math.random() * 10000);
+      console.log("登录成功:", playerId);
+
+      // 初始写入玩家
+      set(ref(db, `rooms/${roomId}/players/${playerId}`), {
+        x: 50,
+        y: 200,
+        score: 0
+      });
+
+      // 离开时删除玩家
+      window.addEventListener("beforeunload", () => {
+        remove(ref(db, `rooms/${roomId}/players/${playerId}`));
+      });
+
+      // 监听房间所有玩家
+      const roomRef = ref(db, `rooms/${roomId}/players`);
+      onValue(roomRef, (snapshot) => {
+        players = snapshot.val() || {};
+      });
+    });
+
+    // === 游戏部分 ===
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    // 自适应屏幕
     function resizeCanvas() {
       canvas.width = window.innerWidth > 800 ? 800 : window.innerWidth - 20;
       canvas.height = window.innerHeight > 400 ? 300 : window.innerHeight - 100;
@@ -59,13 +105,10 @@
     let spawnInterval = 2000;
     let spawnTimer;
 
-    // === 图片 ===
     const dinoImg = new Image();
     dinoImg.src = "dino.png";
-
     const bgImg = new Image();
     bgImg.src = "bg.png";
-
     const cactusImgs = [];
     for (let i = 1; i <= 3; i++) {
       let img = new Image();
@@ -73,7 +116,6 @@
       cactusImgs.push(img);
     }
 
-    // === 音频 ===
     const bgm = document.getElementById("bgm");
     const jumpSound = document.getElementById("jumpSound");
     const hitSound = document.getElementById("hitSound");
@@ -84,24 +126,19 @@
       }
     }
 
-    // 背景
     let bgX = 0;
     function drawBackground() {
       bgX -= 2;
-      if (bgX <= -canvas.width) {
-        bgX = 0;
-      }
+      if (bgX <= -canvas.width) bgX = 0;
       ctx.drawImage(bgImg, bgX, 0, canvas.width, canvas.height);
       ctx.drawImage(bgImg, bgX + canvas.width, 0, canvas.width, canvas.height);
     }
 
-    // 跑道
     function drawGround() {
       ctx.fillStyle = "#444";
       ctx.fillRect(0, canvas.height - 40, canvas.width, 5);
     }
 
-    // 恐龙
     const dino = {
       x: 50,
       y: canvas.height - 100,
@@ -128,36 +165,21 @@
       }
     };
 
-    // === 障碍物 ===
     function spawnObstacle() {
       let randomImg = cactusImgs[Math.floor(Math.random() * cactusImgs.length)];
-      let type = ["static", "moveX", "moveY", "dash"][Math.floor(Math.random() * 4)];
       obstacles.push({
         x: canvas.width,
         y: canvas.height - 90,
         width: 40,
         height: 40,
         img: randomImg,
-        type: type,
-        speed: speed,
-        offset: Math.random() * 100
+        speed: speed
       });
     }
 
     function updateObstacles() {
       for (let ob of obstacles) {
         ob.x -= ob.speed;
-
-        if (ob.type === "moveX") {
-          ob.x += Math.sin(Date.now() / 200) * 2;
-        } else if (ob.type === "moveY") {
-          ob.y = canvas.height - 90 - Math.sin(Date.now() / 300 + ob.offset) * 30;
-        } else if (ob.type === "dash") {
-          if (ob.x < canvas.width - 200) {
-            ob.speed = speed * 2;
-          }
-        }
-
         ctx.drawImage(ob.img, ob.x, ob.y, ob.width, ob.height);
 
         if (
@@ -174,61 +196,10 @@
       obstacles = obstacles.filter(o => o.x + o.width > 0);
     }
 
-    // === 道具 ===
-    function spawnPowerUp() {
-      if (Math.random() < 0.01) {
-        powerUps.push({
-          x: canvas.width,
-          y: canvas.height - 150,
-          width: 25,
-          height: 25,
-          type: ["invincible", "doubleScore", "slow"][Math.floor(Math.random() * 3)]
-        });
-      }
-    }
-
-    function updatePowerUps() {
-      for (let p of powerUps) {
-        p.x -= speed;
-        ctx.fillStyle =
-          p.type === "invincible" ? "gold" :
-          p.type === "doubleScore" ? "blue" : "purple";
-        ctx.fillRect(p.x, p.y, p.width, p.height);
-      }
-      powerUps = powerUps.filter(p => p.x + p.width > 0);
-    }
-
-    function checkPowerUpCollision() {
-      for (let i = 0; i < powerUps.length; i++) {
-        let p = powerUps[i];
-        if (
-          dino.x < p.x + p.width &&
-          dino.x + dino.width > p.x &&
-          dino.y < p.y + p.height &&
-          dino.y + dino.height > p.y
-        ) {
-          if (p.type === "invincible") {
-            effects.invincible = true;
-            setTimeout(() => effects.invincible = false, 5000);
-          } else if (p.type === "doubleScore") {
-            effects.doubleScore = true;
-            setTimeout(() => effects.doubleScore = false, 5000);
-          } else if (p.type === "slow") {
-            speed *= 0.5;
-            setTimeout(() => speed *= 2, 5000);
-          }
-          powerUps.splice(i, 1);
-        }
-      }
-    }
-
-    // === 效果 ===
     let effects = { invincible: false, doubleScore: false };
 
-    // 游戏循环
     function gameLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       drawBackground();
       drawGround();
 
@@ -236,18 +207,34 @@
       dino.draw();
 
       updateObstacles();
-      spawnPowerUp();
-      updatePowerUps();
-      checkPowerUpCollision();
 
       ctx.fillStyle = "#333";
       ctx.font = "20px Arial";
       ctx.fillText("Score: " + score, 10, 20);
       ctx.fillText("High Score: " + highScore, 10, 40);
 
+      // ✅ 上传自己数据
+      if (playerId) {
+        set(ref(db, `rooms/${roomId}/players/${playerId}`), {
+          x: dino.x,
+          y: dino.y,
+          score: score
+        });
+      }
+
+      // ✅ 绘制对手
+      for (let id in players) {
+        if (id !== playerId) {
+          let p = players[id];
+          ctx.fillStyle = "red";
+          ctx.fillRect(p.x, p.y, 50, 50); // 用红色方块代替
+          ctx.fillStyle = "black";
+          ctx.fillText(`P2 Score: ${p.score}`, p.x, p.y - 10);
+        }
+      }
+
       if (!gameOver) {
-        score += effects.doubleScore ? 2 : 1;
-        if (score % 100 === 0) speed += 0.5; // 难度曲线
+        score += 1;
         requestAnimationFrame(gameLoop);
       } else {
         ctx.fillStyle = "red";
@@ -262,7 +249,6 @@
       }
     }
 
-    // 控制
     document.addEventListener("keydown", e => {
       if (e.code === "Space" || e.code === "ArrowUp") {
         dino.jump();
@@ -272,37 +258,27 @@
       dino.jump();
     });
 
-    // 重新开始
     document.getElementById("restartBtn").addEventListener("click", () => {
       obstacles = [];
-      powerUps = [];
       score = 0;
       speed = 5;
-      spawnInterval = 2000;
       gameOver = false;
       document.getElementById("restartBtn").style.display = "none";
       bgm.currentTime = 0;
       bgm.play();
-      spawnTimer = setInterval(() => {
-        if (!gameOver) spawnObstacle();
-      }, spawnInterval);
+      spawnTimer = setInterval(spawnObstacle, spawnInterval);
       gameLoop();
     });
 
-    // === 图片加载完成后启动 ===
     let resourcesToLoad = 2 + cactusImgs.length;
     let resourcesLoaded = 0;
-
     function resourceLoaded() {
       resourcesLoaded++;
       if (resourcesLoaded >= resourcesToLoad) {
-        spawnTimer = setInterval(() => {
-          if (!gameOver) spawnObstacle();
-        }, spawnInterval);
+        spawnTimer = setInterval(spawnObstacle, spawnInterval);
         gameLoop();
       }
     }
-
     [dinoImg, bgImg, ...cactusImgs].forEach(img => {
       img.onload = resourceLoaded;
       img.onerror = resourceLoaded;
@@ -310,6 +286,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 

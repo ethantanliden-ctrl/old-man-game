@@ -7,7 +7,7 @@
 <style>
   /* ---------------- basic UI (casino style) ---------------- */
   :root{--gold:#d4af37;--green1:#145214;--green2:#0a2e0a}
-  body{margin:0;font-family:"Segoe UI", "PingFang SC", "Microsoft YaHei", Arial;background:radial-gradient(circle at center,var(--green1) 0%,var(--green2) 100%);color:#fff}
+  body{margin:0;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",Arial;background:radial-gradient(circle at center,var(--green1) 0%,var(--green2) 100%);color:#fff}
   .wrap{max-width:1200px;margin:18px auto;padding:16px}
   header{display:flex;align-items:center;justify-content:space-between;gap:12px}
   h1{margin:0;color:var(--gold);font-size:20px}
@@ -93,7 +93,7 @@
     <footer class="note">提示：第一次运行请先到 Firebase 控制台把 Realtime Database 的规则在开发阶段设为 <code>{".read": true, ".write": true}</code></footer>
   </div>
 
-  <!-- Hidden: YouTube background music iframe (初始静音自动播放) -->
+  <!-- Hidden: YouTube background music iframe -->
   <div style="position:fixed;left:-9999px;top:-9999px;visibility:hidden">
     <iframe id="bgmIframe"
       src="https://www.youtube.com/embed/Bjv-waCxb0Q?autoplay=1&mute=1&loop=1&playlist=Bjv-waCxb0Q&enablejsapi=1"
@@ -101,70 +101,34 @@
   </div>
 
 <script type="module">
-/* ===============================================================
-   完整版 JS（详细、分段、注释） - 使用 Firebase Realtime DB (模块化)
-   =============================================================== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+import { getDatabase, ref, set, update, get, push, remove, onValue } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-database.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
 
-/* ---------------- Firebase 初始化 ---------------- */
-<script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
-  import { getDatabase } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-database.js";
+// Firebase 配置
+const firebaseConfig = {
+  apiKey: "AIzaSyBylbQlZZ7Xo8qEPtoa39Ey3QBxpkcP4_k",
+  authDomain: "dino-game-3ed81.firebaseapp.com",
+  databaseURL: "https://dino-game-3ed81-default-rtdb.firebaseio.com",
+  projectId: "dino-game-3ed81",
+  storageBucket: "dino-game-3ed81.firebasestorage.app",
+  messagingSenderId: "580049109346",
+  appId: "1:580049109346:web:d7091eacedebcd5d076c3b",
+  measurementId: "G-9R5G3R7PR5"
+};
 
-  // Your web app's Firebase configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyBylbQlZZ7Xo8qEPtoa39Ey3QBxpkcP4_k",
-    authDomain: "dino-game-3ed81.firebaseapp.com",
-    databaseURL: "https://dino-game-3ed81-default-rtdb.firebaseio.com", // ✅ 你提供的实时数据库 URL
-    projectId: "dino-game-3ed81",
-    storageBucket: "dino-game-3ed81.firebasestorage.app",
-    messagingSenderId: "580049109346",
-    appId: "1:580049109346:web:d7091eacedebcd5d076c3b",
-    measurementId: "G-9R5G3R7PR5"
-  };
+// 初始化 Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const db = getDatabase(app);
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-  const database = getDatabase(app); // ✅ 初始化实时数据库
+// ---------------- 全局状态 ----------------
+let ROOM = null;
+const PLAYER_ID = "玩家" + Math.floor(Math.random()*90000+1000);
+let playerPath = null;
+let roomRef = null;
 
-/* ---------------- 全局状态 ---------------- */
-let ROOM = null;                // 当前房间号
-const PLAYER_ID = "玩家" + Math.floor(Math.random()*90000+1000); // 随机 player id
-let playerPath = null;          // DB 路径 rooms/ROOM/players/PLAYER_ID
-let roomRef = null;             // DB 参考
-let localUnsubscribe = null;    // onValue 取消函数（当换房间时）
-const MAX_PLAYERS = 13;
-
-/* ---------------- 牌堆与点数工具 ---------------- */
-function createDeck(){
-  const suits = ["♠","♥","♣","♦"];
-  const ranks = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
-  const deck = [];
-  for(const s of suits) for(const r of ranks) deck.push(r + s);
-  return deck;
-}
-function shuffleDeck(deck){
-  for(let i=deck.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-}
-function calcPoints(cards){
-  if(!cards || cards.length===0) return 0;
-  let sum=0, aces=0;
-  for(const c of cards){
-    const rank = c.slice(0, -1);
-    if(["J","Q","K"].includes(rank)) sum += 10;
-    else if(rank==="A"){ sum += 11; aces++; }
-    else sum += parseInt(rank, 10);
-  }
-  while(sum>21 && aces>0){ sum -= 10; aces--; }
-  return sum;
-}
-
-/* ---------------- UI 元件 ---------------- */
+// ---------------- UI 元件 ----------------
 const el = id => document.getElementById(id);
 const playersWrap = el('playersWrap');
 const dealerCardsEl = el('dealerCards');
@@ -183,16 +147,12 @@ const chatInput = el('chatInput');
 const sendChatBtn = el('sendChatBtn');
 const bgmIframe = el('bgmIframe');
 
-/* ---------------- 事件绑定（UI） ---------------- */
+// ---------------- 事件绑定 ----------------
 joinBtn.addEventListener('click', async () => {
   const rid = joinInput.value.trim();
   if(!rid){ alert("请输入房间号"); return; }
   await joinRoom(rid);
-  // 尝试解除静音/自动播放（许多浏览器仍会拦截，用户交互可能需要）
-  try {
-    // 通过重新设置 src 去尝试触发 autoplay (浏览器策略不保证成功)
-    bgmIframe.src = bgmIframe.src.replace(/(&|)mute=\d/, '') + '&mute=0';
-  } catch(e){ /* ignore */ }
+  try { bgmIframe.src = bgmIframe.src.replace(/(&|)mute=\d/, '') + '&mute=0'; } catch(e){}
 });
 sendChatBtn.addEventListener('click', sendChat);
 chatInput.addEventListener('keydown', (e)=> { if(e.key==='Enter') sendChat(); });
@@ -657,4 +617,5 @@ async function nextRound(){
 </script>
 </body>
 </html>
+
 

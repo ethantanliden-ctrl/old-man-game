@@ -1,246 +1,325 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <title>多人联机小恐龙</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>小恐龙（网页版）</title>
   <style>
-    body {
-      margin: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      background: #222;
-      color: white;
-      font-family: sans-serif;
-    }
-    canvas {
-      border: 2px solid #333;
-      background: #eee;
-    }
-    #leaderboard {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      background: rgba(0,0,0,0.6);
-      padding: 10px;
-      border-radius: 8px;
-      font-size: 14px;
-      min-width: 150px;
-    }
-    #leaderboard h3 {
-      margin: 0 0 5px;
-      font-size: 16px;
-      text-align: center;
-      color: gold;
-    }
-    #leaderboard ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-    #leaderboard li {
-      margin: 3px 0;
-    }
+    :root{--bg:#f7f7f7;--ground:#444;--dino:#222;--ob:#333;--accent:#08c}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Roboto,"Segoe UI",NotoSans,"Hiragino Sans GB",sans-serif;background:var(--bg);color:#111}
+    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+    .card{width:100%;max-width:900px;background:linear-gradient(180deg,#fff,#fbfbfb);border-radius:12px;box-shadow:0 8px 30px rgba(12,12,12,0.08);padding:24px}
+    header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    h1{font-size:18px;margin:0}
+    .controls{margin-left:auto;font-size:13px;color:#666}
+    canvas{display:block;width:100%;height:auto;border-radius:6px;background:linear-gradient(#dfe7ef,#f6fbff);box-shadow:inset 0 -12px 0 rgba(0,0,0,0.02);}
+    .info{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+    .score{font-weight:700;color:var(--accent)}
+    .btn{border:0;padding:8px 12px;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+    .help{font-size:13px;color:#666}
+    @media (max-width:520px){.card{padding:16px}}
   </style>
-  <!-- Firebase SDK -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getDatabase, ref, set, update, remove, onValue, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-
-    // Firebase 配置
-    const firebaseConfig = {
-      apiKey: "AIzaSyCfgSlZ9w56txH3UK4iYvMiCbbES_JvLNw",
-      authDomain: "my-game-52f18.firebaseapp.com",
-      projectId: "my-game-52f18",
-      storageBucket: "my-game-52f18.firebasestorage.app",
-      messagingSenderId: "407828942891",
-      appId: "1:407828942891:web:b27dcb37646a31bc5e5a6e",
-      measurementId: "G-TW6LTQHBZB",
-      databaseURL: "https://my-game-52f18-default-rtdb.asia-southeast1.firebasedatabase.app/"
-    };
-
-    // 初始化 Firebase
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const auth = getAuth();
-
-    // 🎮 当前房间 ID（固定 room1，你也可以以后改成玩家输入）
-    const roomId = "room1";
-
-    // 游戏基本配置
-    const canvas = document.createElement("canvas");
-    canvas.width = 800;
-    canvas.height = 300;
-    document.body.appendChild(canvas);
-    const ctx = canvas.getContext("2d");
-
-    const gravity = 0.6;
-    const jumpPower = -12;
-    const ground = 250;
-
-    // 当前玩家 ID（使用 Firebase 匿名登录生成的 UID）
-    let playerId = null;
-
-    // 本地玩家
-    let player = null;
-
-    // 所有玩家
-    let players = {};
-
-    // 障碍物
-    let obstacles = [];
-    let frame = 0;
-
-    // 🎯 排行榜 DOM
-    const leaderboardDiv = document.createElement("div");
-    leaderboardDiv.id = "leaderboard";
-    leaderboardDiv.innerHTML = "<h3>排行榜</h3><ul id='rankList'></ul>";
-    document.body.appendChild(leaderboardDiv);
-    const rankList = document.getElementById("rankList");
-
-    // 随机颜色（每个玩家不同颜色）
-    function getRandomColor() {
-      const colors = ["red", "blue", "green", "purple", "orange"];
-      return colors[Math.floor(Math.random() * colors.length)];
-    }
-
-    // 键盘控制
-    document.addEventListener("keydown", (e) => {
-      if (e.code === "Space" && player && player.y === ground) {
-        player.vy = jumpPower;
-      }
-    });
-
-    // 更新玩家到 Firebase
-    function updatePlayer() {
-      if (!playerId || !player) return;
-      update(ref(db, `rooms/${roomId}/players/${playerId}`), {
-        x: player.x,
-        y: player.y,
-        score: player.score,
-        color: player.color
-      });
-    }
-
-    // 移除玩家（关闭页面时）
-    window.addEventListener("beforeunload", () => {
-      if (playerId) {
-        remove(ref(db, `rooms/${roomId}/players/${playerId}`));
-      }
-    });
-
-    // 监听房间内所有玩家
-    onValue(ref(db, `rooms/${roomId}/players`), (snapshot) => {
-      players = snapshot.val() || {};
-    });
-
-    // 🎯 监听排行榜
-    onValue(ref(db, "highScores"), (snapshot) => {
-      const scores = snapshot.val() || {};
-      const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 5);
-      rankList.innerHTML = "";
-      sorted.forEach(([id, score], idx) => {
-        const li = document.createElement("li");
-        li.textContent = `${idx + 1}. ${id.slice(0,6)} - ${score}`;
-        rankList.appendChild(li);
-      });
-    });
-
-    // 游戏循环
-    function gameLoop() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // 绘制地面
-      ctx.fillStyle = "#444";
-      ctx.fillRect(0, ground + 30, canvas.width, 10);
-
-      if (player) {
-        // 玩家物理
-        player.vy += gravity;
-        player.y += player.vy;
-        if (player.y > ground) {
-          player.y = ground;
-          player.vy = 0;
-        }
-
-        // 更新分数（每30帧一次）
-        if (frame % 30 === 0) {
-          player.score++;
-          updatePlayer();
-        }
-      }
-
-      // 绘制所有玩家
-      ctx.font = "14px Arial";
-      for (let id in players) {
-        let p = players[id];
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y - 40, 30, 40);
-        ctx.fillStyle = "black";
-        ctx.fillText(`ID:${id.slice(0,6)} 分数:${p.score}`, p.x - 10, p.y - 50);
-      }
-
-      // 生成障碍物
-      if (frame % 100 === 0) {
-        obstacles.push({ x: canvas.width, y: ground, w: 20, h: 40 });
-      }
-
-      // 更新障碍物
-      ctx.fillStyle = "black";
-      for (let i = 0; i < obstacles.length; i++) {
-        let ob = obstacles[i];
-        ob.x -= 5;
-        ctx.fillRect(ob.x, ob.y - ob.h, ob.w, ob.h);
-
-        // 碰撞检测（只检测本地玩家）
-        if (
-          player &&
-          player.x < ob.x + ob.w &&
-          player.x + 30 > ob.x &&
-          player.y < ob.y &&
-          player.y + 40 > ob.y - ob.h
-        ) {
-          alert("游戏结束！得分: " + player.score);
-
-          // 🎯 保存到排行榜
-          update(ref(db, `highScores/${playerId}`), player.score);
-
-          remove(ref(db, `rooms/${roomId}/players/${playerId}`));
-          window.location.reload();
-        }
-      }
-
-      frame++;
-      requestAnimationFrame(gameLoop);
-    }
-
-    // ✅ 使用 Firebase 匿名登录获取 UID
-    signInAnonymously(auth)
-      .then(() => {
-        playerId = auth.currentUser.uid; // Firebase 分配的唯一 ID
-        player = {
-          id: playerId,
-          x: 50 + Math.floor(Math.random() * 200), // 随机初始位置
-          y: ground,
-          vy: 0,
-          score: 0,
-          color: getRandomColor()
-        };
-
-        // 初始化数据库中本地玩家
-        set(ref(db, `rooms/${roomId}/players/${playerId}`), player);
-
-        // 开始游戏
-        gameLoop();
-      })
-      .catch((error) => {
-        console.error("匿名登录失败:", error);
-      });
-  </script>
 </head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <h1>小恐龙（按 空格 / ↑ 跳跃）</h1>
+        <div class="controls">触屏：点按/轻触 跳跃 — 长按下方按钮 则下蹲</div>
+      </header>
+
+      <canvas id="game" width="900" height="260" aria-label="小恐龙游戏画布"></canvas>
+
+      <div class="info">
+        <div class="help">按 R 或 点击画布重新开始 · 道具/速度会随分数增加</div>
+        <div>
+          <span class="score" id="score">分数 0</span>
+          <button class="btn" id="restart">重新开始</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+// 小恐龙游戏 - 单文件实现
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  // 虽然 canvas 的 CSS 尺寸是响应式的，但内部坐标使用固定像素尺寸并会适配 DPR
+  function resizeCanvas(){
+    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.floor(rect.width * DPR);
+    canvas.height = Math.floor(260 * DPR); // 固定高度视觉效果稳定
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // 游戏变量
+  let running = false;
+  let gameOver = false;
+  let score = 0;
+  let speed = 6; // 世界移动速度
+  let spawnTimer = 0;
+  let lastTime = 0;
+  let obstacles = [];
+  let clouds = [];
+
+  // 地面
+  const groundY = 200;
+
+  // 玩家（小恐龙）
+  const dino = {
+    x: 60,
+    y: groundY,
+    w: 44,
+    h: 44,
+    vy: 0,
+    gravity: 0.9,
+    jumpPower: -13,
+    ducking: false,
+    onGround(){ return this.y >= groundY }
+  };
+
+  // 障碍构造
+  function createObstacle(){
+    const types = ['cactus','cactus2','ptera'];
+    const t = Math.random() < 0.12 ? 'ptera' : (Math.random()<0.6? 'cactus':'cactus2');
+    if(t === 'ptera'){
+      return {type:t,w:46,h:32,x:canvas.width+20,y:groundY-60,passed:false};
+    }
+    const h = t==='cactus'? 38 : 58;
+    return {type:t,w: (t==='cactus'?20:30),h, x: canvas.width + 10, y: groundY - h + (t==='cactus2'? -6:0), passed:false};
+  }
+
+  // 云
+  function createCloud(){
+    return {x:canvas.width + 10, y: 30 + Math.random()*60, w:50 + Math.random()*60, speed:1 + Math.random()*0.6}
+  }
+
+  // 输入
+  const keys = {};
+  window.addEventListener('keydown', e=>{
+    if(e.code === 'Space' || e.code === 'ArrowUp') e.preventDefault();
+    keys[e.code] = true;
+    if(!running && (e.code==='Space' || e.code==='ArrowUp')) start();
+    if(gameOver && e.key.toLowerCase()==='r') reset();
+  });
+  window.addEventListener('keyup', e=>{ keys[e.code] = false });
+
+  // 触屏支持：点击跳，长按下蹲
+  let touchHold = false;
+  let touchTimer = null;
+  canvas.addEventListener('pointerdown', e=>{
+    e.preventDefault();
+    touchHold = true;
+    touchTimer = setTimeout(()=>{
+      dino.ducking = true;
+    }, 250);
+    if(!running) start();
+  });
+  window.addEventListener('pointerup', e=>{
+    touchHold = false;
+    clearTimeout(touchTimer);
+    dino.ducking = false;
+    // 当为短按时触发跳
+    if(!gameOver && running){
+      // if pointerdown duration < 250ms -> jump
+      // We approximate with whether ducking had been set
+      if(!dino.ducking) tryJump();
+    }
+  });
+
+  // 跳跃
+  function tryJump(){
+    if(dino.onGround() && !dino.ducking){
+      dino.vy = dino.jumpPower; 
+      dino.y += dino.vy;
+    }
+  }
+
+  // 碰撞检测
+  function rectsOverlap(a,b){
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  // 主循环
+  function start(){
+    if(running) return;
+    running = true; gameOver = false; score = 0; speed = 6; obstacles = []; clouds = [];
+    spawnTimer = 0; lastTime = performance.now();
+    // 预生成一些云
+    for(let i=0;i<3;i++) clouds.push(createCloud());
+    requestAnimationFrame(loop);
+  }
+
+  function reset(){
+    running = false; gameOver = false; score = 0; speed = 6; obstacles = []; clouds = []; dino.y = groundY; dino.vy=0; dino.ducking=false; document.getElementById('score').textContent = '分数 0';
+  }
+
+  // 画函数
+  function draw(){
+    // 背景
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // sky gradient
+    const g = ctx.createLinearGradient(0,0,0,canvas.height);
+    g.addColorStop(0,'#e9f2ff'); g.addColorStop(1,'#f7fbff');
+    ctx.fillStyle = g; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // 云
+    ctx.globalAlpha = 0.9;
+    clouds.forEach(c=>{
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, c.w*0.6, c.w*0.35, 0, 0, Math.PI*2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // 地平线
+    ctx.fillStyle = 'rgba(0,0,0,0.05)';
+    ctx.fillRect(0, groundY + dprFix(46), canvas.width, 2);
+
+    // 地面纹理（虚线）
+    for(let i=0;i<canvas.width;i+=28){
+      ctx.fillRect(i, groundY + dprFix(48), 16, 2);
+    }
+
+    // 障碍
+    obstacles.forEach(o=>{
+      ctx.save();
+      if(o.type === 'ptera'){
+        // 简单飞鸟形状
+        ctx.fillStyle = '#444';
+        ctx.beginPath();
+        ctx.moveTo(o.x, o.y + 6);
+        ctx.quadraticCurveTo(o.x + 16, o.y - 12, o.x + o.w, o.y + 6);
+        ctx.quadraticCurveTo(o.x + o.w - 18, o.y - 2, o.x, o.y + 6);
+        ctx.fill();
+      } else {
+        // 仙人掌
+        ctx.fillStyle = '#2b2b2b';
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+        // 小刺
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.fillRect(o.x + 2, o.y + 6, o.w - 4, 2);
+      }
+      ctx.restore();
+    });
+
+    // 小恐龙
+    ctx.save();
+    ctx.translate(dino.x + dino.w/2, dino.y + dino.h/2);
+    // duck effect
+    const dh = dino.ducking ? dino.h * 0.6 : dino.h;
+    ctx.fillStyle = '#111';
+    ctx.fillRect(-dino.w/2, -dh/2, dino.w, dh);
+    // 眼睛
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(dino.w/4 - dino.w/6, -dh/6 - 2, 6, 6);
+    ctx.restore();
+
+    // 分数和状态
+    ctx.fillStyle = '#333';
+    ctx.font = '14px system-ui, sans-serif';
+    ctx.fillText('速度: ' + speed.toFixed(1), 14, 22);
+  }
+
+  function dprFix(v){ return v; }
+
+  function loop(ts){
+    const dt = Math.min((ts - lastTime)/16.6667, 3); // 1 unit ~ 16.67ms
+    lastTime = ts;
+
+    // 更新云
+    clouds.forEach(c=> c.x -= c.speed * (speed/6));
+    clouds = clouds.filter(c=> c.x + c.w > -50);
+    if(Math.random() < 0.01) clouds.push(createCloud());
+
+    // 生成障碍
+    spawnTimer -= dt * 1;
+    if(spawnTimer <= 0){
+      obstacles.push(createObstacle());
+      // spawn gap depends on speed
+      spawnTimer = 60 - Math.min(40, speed*4) + Math.random()*40;
+    }
+
+    // 更新障碍位置
+    obstacles.forEach(o=>{
+      o.x -= speed * dt * 8;
+    });
+    obstacles = obstacles.filter(o=> o.x + o.w > -40);
+
+    // 小恐龙物理
+    if((keys['Space'] || keys['ArrowUp']) && dino.onGround() && !dino.ducking){
+      tryJump();
+    }
+    if(keys['ArrowDown']) dino.ducking = true; else if(!touchHold) dino.ducking = false;
+
+    dino.y += dino.vy;
+    dino.vy += dino.gravity * dt;
+    if(dino.y > groundY) { dino.y = groundY; dino.vy = 0; }
+
+    // 碰撞
+    const drect = {x: dino.x, y: dino.y, w: dino.w, h: dino.ducking? dino.h*0.6: dino.h};
+    for(const o of obstacles){
+      const orect = {x:o.x, y:o.y, w:o.w, h:o.h};
+      if(rectsOverlap(drect,orect)){
+        // 碰撞
+        running = false; gameOver = true;
+      }
+      // 过障碍得分
+      if(!o.passed && o.x + o.w < dino.x){ o.passed = true; score += 10; document.getElementById('score').textContent = '分数 ' + score; }
+    }
+
+    // 随分数提升速度
+    speed = 6 + Math.floor(score/100) * 0.8 + Math.floor(score/10)*0.003; // 稳定提升
+
+    // 绘制
+    draw();
+
+    // gameover 显示
+    if(gameOver){
+      // overlay
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = '#fff'; ctx.font = '22px system-ui, sans-serif'; ctx.textAlign='center';
+      ctx.fillText('游戏结束', canvas.width/2/ (window.devicePixelRatio||1), canvas.height/2/ (window.devicePixelRatio||1) - 6);
+      ctx.font = '14px system-ui, sans-serif';
+      ctx.fillText('按 R 或 点击重新开始', canvas.width/2/ (window.devicePixelRatio||1), canvas.height/2/ (window.devicePixelRatio||1) + 18);
+      ctx.textAlign = 'start';
+      return; // 停止循环
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  // UI 绑定
+  document.getElementById('restart').addEventListener('click', ()=>{
+    reset(); start();
+  });
+
+  canvas.addEventListener('click', e=>{
+    if(gameOver) { reset(); start(); }
+  });
+
+  // 初始绘制
+  draw();
+
+  // 当页面加载但不启动时，给用户提示
+  document.getElementById('score').textContent = '分数 0';
+
+  // 暴露方法到全局以便调试
+  window.DinoGame = { start, reset };
+})();
+</script>
+</body>
+</html>
 <body>
 </body>
 </html>
+
 

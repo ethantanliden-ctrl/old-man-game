@@ -18,11 +18,36 @@
       border: 2px solid #333;
       background: #eee;
     }
+    #leaderboard {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      min-width: 150px;
+    }
+    #leaderboard h3 {
+      margin: 0 0 5px;
+      font-size: 16px;
+      text-align: center;
+      color: gold;
+    }
+    #leaderboard ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    #leaderboard li {
+      margin: 3px 0;
+    }
   </style>
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getDatabase, ref, set, update, remove, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+    import { getDatabase, ref, set, update, remove, onValue, get } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
     // Firebase 配置
     const firebaseConfig = {
@@ -39,6 +64,10 @@
     // 初始化 Firebase
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
+    const auth = getAuth();
+
+    // 🎮 当前房间 ID（固定 room1，你也可以以后改成玩家输入）
+    const roomId = "room1";
 
     // 游戏基本配置
     const canvas = document.createElement("canvas");
@@ -51,18 +80,11 @@
     const jumpPower = -12;
     const ground = 250;
 
-    // 当前玩家 ID
-    const playerId = "player_" + Math.floor(Math.random() * 1000000);
+    // 当前玩家 ID（使用 Firebase 匿名登录生成的 UID）
+    let playerId = null;
 
     // 本地玩家
-    let player = {
-      id: playerId,
-      x: 50,
-      y: ground,
-      vy: 0,
-      score: 0,
-      color: getRandomColor()
-    };
+    let player = null;
 
     // 所有玩家
     let players = {};
@@ -70,6 +92,13 @@
     // 障碍物
     let obstacles = [];
     let frame = 0;
+
+    // 🎯 排行榜 DOM
+    const leaderboardDiv = document.createElement("div");
+    leaderboardDiv.id = "leaderboard";
+    leaderboardDiv.innerHTML = "<h3>排行榜</h3><ul id='rankList'></ul>";
+    document.body.appendChild(leaderboardDiv);
+    const rankList = document.getElementById("rankList");
 
     // 随机颜色（每个玩家不同颜色）
     function getRandomColor() {
@@ -79,14 +108,15 @@
 
     // 键盘控制
     document.addEventListener("keydown", (e) => {
-      if (e.code === "Space" && player.y === ground) {
+      if (e.code === "Space" && player && player.y === ground) {
         player.vy = jumpPower;
       }
     });
 
     // 更新玩家到 Firebase
     function updatePlayer() {
-      update(ref(db, "players/" + playerId), {
+      if (!playerId || !player) return;
+      update(ref(db, `rooms/${roomId}/players/${playerId}`), {
         x: player.x,
         y: player.y,
         score: player.score,
@@ -96,12 +126,26 @@
 
     // 移除玩家（关闭页面时）
     window.addEventListener("beforeunload", () => {
-      remove(ref(db, "players/" + playerId));
+      if (playerId) {
+        remove(ref(db, `rooms/${roomId}/players/${playerId}`));
+      }
     });
 
-    // 监听所有玩家
-    onValue(ref(db, "players"), (snapshot) => {
+    // 监听房间内所有玩家
+    onValue(ref(db, `rooms/${roomId}/players`), (snapshot) => {
       players = snapshot.val() || {};
+    });
+
+    // 🎯 监听排行榜
+    onValue(ref(db, "highScores"), (snapshot) => {
+      const scores = snapshot.val() || {};
+      const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      rankList.innerHTML = "";
+      sorted.forEach(([id, score], idx) => {
+        const li = document.createElement("li");
+        li.textContent = `${idx + 1}. ${id.slice(0,6)} - ${score}`;
+        rankList.appendChild(li);
+      });
     });
 
     // 游戏循环
@@ -112,24 +156,30 @@
       ctx.fillStyle = "#444";
       ctx.fillRect(0, ground + 30, canvas.width, 10);
 
-      // 玩家物理
-      player.vy += gravity;
-      player.y += player.vy;
-      if (player.y > ground) {
-        player.y = ground;
-        player.vy = 0;
+      if (player) {
+        // 玩家物理
+        player.vy += gravity;
+        player.y += player.vy;
+        if (player.y > ground) {
+          player.y = ground;
+          player.vy = 0;
+        }
+
+        // 更新分数（每30帧一次）
+        if (frame % 30 === 0) {
+          player.score++;
+          updatePlayer();
+        }
       }
 
-      // 更新分数
-      player.score++;
-      updatePlayer();
-
       // 绘制所有玩家
+      ctx.font = "14px Arial";
       for (let id in players) {
         let p = players[id];
         ctx.fillStyle = p.color;
         ctx.fillRect(p.x, p.y - 40, 30, 40);
-        ctx.fillText(`ID:${id} 分数:${p.score}`, p.x - 10, p.y - 50);
+        ctx.fillStyle = "black";
+        ctx.fillText(`ID:${id.slice(0,6)} 分数:${p.score}`, p.x - 10, p.y - 50);
       }
 
       // 生成障碍物
@@ -146,13 +196,18 @@
 
         // 碰撞检测（只检测本地玩家）
         if (
+          player &&
           player.x < ob.x + ob.w &&
           player.x + 30 > ob.x &&
           player.y < ob.y &&
           player.y + 40 > ob.y - ob.h
         ) {
           alert("游戏结束！得分: " + player.score);
-          remove(ref(db, "players/" + playerId));
+
+          // 🎯 保存到排行榜
+          update(ref(db, `highScores/${playerId}`), player.score);
+
+          remove(ref(db, `rooms/${roomId}/players/${playerId}`));
           window.location.reload();
         }
       }
@@ -161,17 +216,31 @@
       requestAnimationFrame(gameLoop);
     }
 
-    // 初始化数据库中本地玩家
-    set(ref(db, "players/" + playerId), player);
+    // ✅ 使用 Firebase 匿名登录获取 UID
+    signInAnonymously(auth)
+      .then(() => {
+        playerId = auth.currentUser.uid; // Firebase 分配的唯一 ID
+        player = {
+          id: playerId,
+          x: 50 + Math.floor(Math.random() * 200), // 随机初始位置
+          y: ground,
+          vy: 0,
+          score: 0,
+          color: getRandomColor()
+        };
 
-    // 开始游戏
-    gameLoop();
+        // 初始化数据库中本地玩家
+        set(ref(db, `rooms/${roomId}/players/${playerId}`), player);
+
+        // 开始游戏
+        gameLoop();
+      })
+      .catch((error) => {
+        console.error("匿名登录失败:", error);
+      });
   </script>
 </head>
 <body>
 </body>
 </html>
-
-
-
 

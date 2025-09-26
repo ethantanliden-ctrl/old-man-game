@@ -106,25 +106,28 @@
    =============================================================== */
 
 /* ---------------- Firebase 初始化 ---------------- */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getDatabase, ref, set, get, onValue, update, push, remove
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
+  import { getDatabase } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-database.js";
 
-/* --------- 把你的 Firebase 配置放在这里（我已经填你的配置） --------- */
-const firebaseConfig = {
-  apiKey: "AIzaSyBylbQlZZ7Xo8qEPtoa39Ey3QBxpkcP4_k",
-authDomain: "dino-game-3ed81.firebaseapp.com",
-databaseURL: "https://dino-game-3ed81-default-rtdb.firebaseio.com", // ✅ 你提供的实时数据库 URL
-projectId: "dino-game-3ed81",
-storageBucket: "dino-game-3ed81.firebasestorage.app",
-messagingSenderId: "580049109346",
-appId: "1:580049109346:web:d7091eacedebcd5d076c3b",
-measurementId: "G-9R5G3R7PR5"
-};
+  // Your web app's Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyBylbQlZZ7Xo8qEPtoa39Ey3QBxpkcP4_k",
+    authDomain: "dino-game-3ed81.firebaseapp.com",
+    databaseURL: "https://dino-game-3ed81-default-rtdb.firebaseio.com", // ✅ 你提供的实时数据库 URL
+    projectId: "dino-game-3ed81",
+    storageBucket: "dino-game-3ed81.firebasestorage.app",
+    messagingSenderId: "580049109346",
+    appId: "1:580049109346:web:d7091eacedebcd5d076c3b",
+    measurementId: "G-9R5G3R7PR5"
+  };
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+  const database = getDatabase(app); // ✅ 初始化实时数据库
 
 /* ---------------- 全局状态 ---------------- */
 let ROOM = null;                // 当前房间号
@@ -654,3 +657,4 @@ async function nextRound(){
 </script>
 </body>
 </html>
+

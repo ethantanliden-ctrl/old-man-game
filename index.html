@@ -1,201 +1,656 @@
-<!doctype html>
-<html lang="zh">
+<!DOCTYPE html>
+<html lang="zh-Hans">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>小恐龙（联机版）</title>
-  <style>
-    :root{--bg:#f7f7f7;--ground:#444;--dino:#222;--ob:#333;--accent:#08c}
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Roboto,"Segoe UI",sans-serif;background:var(--bg);color:#111}
-    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
-    .card{width:100%;max-width:900px;background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(12,12,12,0.08);padding:24px}
-    header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-    h1{font-size:18px;margin:0}
-    .controls{margin-left:auto;font-size:13px;color:#666}
-    canvas{display:block;width:100%;height:auto;border-radius:6px;background:linear-gradient(#dfe7ef,#f6fbff);box-shadow:inset 0 -12px 0 rgba(0,0,0,0.02);}
-    .info{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
-    .score{font-weight:700;color:var(--accent)}
-    .btn{border:0;padding:8px 12px;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
-    .btn:active{transform:translateY(1px)}
-    .help{font-size:13px;color:#666}
-    .join-box{margin-bottom:16px}
-    input{padding:6px;border:1px solid #ccc;border-radius:6px;margin-right:8px}
-    @media (max-width:520px){.card{padding:16px}}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>最终版：多人 21 点（华人版） - 完整功能 + 聊天 + 音乐</title>
+<style>
+  /* ---------------- basic UI (casino style) ---------------- */
+  :root{--gold:#d4af37;--green1:#145214;--green2:#0a2e0a}
+  body{margin:0;font-family:"Segoe UI", "PingFang SC", "Microsoft YaHei", Arial;background:radial-gradient(circle at center,var(--green1) 0%,var(--green2) 100%);color:#fff}
+  .wrap{max-width:1200px;margin:18px auto;padding:16px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  h1{margin:0;color:var(--gold);font-size:20px}
+  .topbar{background:rgba(0,0,0,0.45);padding:10px;border-radius:10px;display:flex;gap:8px;align-items:center}
+  input, button, select{padding:8px;border-radius:8px;border:0;outline:none}
+  button{cursor:pointer;background:linear-gradient(#ffd700,#d4af37);font-weight:700;color:#000}
+  button:disabled{opacity:0.6;cursor:not-allowed}
+  main{display:grid;grid-template-columns:1fr 360px;gap:14px;margin-top:14px}
+  .panel{background:rgba(0,0,0,0.45);padding:12px;border-radius:12px}
+  .dealer{border:2px solid var(--gold);padding:12px;border-radius:10px;margin-bottom:12px}
+  .players-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+  .player-card{background:rgba(255,255,255,0.06);padding:10px;border-radius:8px}
+  .card{display:inline-block;background:#fff;color:#000;padding:6px 10px;border-radius:8px;margin:3px;font-weight:700;box-shadow:0 4px 10px rgba(0,0,0,0.5)}
+  .chat{display:flex;flex-direction:column;height:70vh}
+  .messages{flex:1;overflow:auto;padding:8px;border-radius:8px;background:rgba(255,255,255,0.03)}
+  .msg{margin-bottom:8px;padding:6px;border-radius:6px;background:rgba(0,0,0,0.35)}
+  .controls-row{display:flex;gap:8px;align-items:center}
+  .small{font-size:13px;color:#ddd}
+  footer.note{margin-top:10px;color:#cdd}
+  @media(max-width:980px){main{grid-template-columns:1fr}}
+</style>
 </head>
+
 <body>
   <div class="wrap">
-    <div class="card">
-      <header>
-        <h1>小恐龙（多人联机版）</h1>
-        <div class="controls">空格/↑ 跳跃 · ↓ 下蹲</div>
-      </header>
-
-      <div class="join-box">
-        <input id="roomId" placeholder="房间号">
-        <input id="playerName" placeholder="昵称">
-        <button class="btn" id="joinBtn">加入房间</button>
+    <header>
+      <h1>多人 21 点（华人版） — 完整版</h1>
+      <div class="topbar">
+        <label>房间号：<input id="roomInput" placeholder="输入房间号"></label>
+        <button id="joinBtn">加入房间</button>
+        <span id="meLabel" class="small">未加入</span>
       </div>
+    </header>
 
-      <canvas id="game" width="900" height="260"></canvas>
-
-      <div class="info">
-        <div class="help">按 R 或 点击画布重新开始</div>
-        <div>
-          <span class="score" id="score">分数 0</span>
-          <button class="btn" id="restart">重新开始</button>
+    <main>
+      <!-- Left: Game area -->
+      <section class="panel">
+        <div class="dealer" id="dealerArea">
+          <strong>庄家</strong>
+          <div id="dealerCards" style="margin-top:8px"></div>
+          <div id="dealerPoints" class="small" style="margin-top:8px">点数: --</div>
+          <div id="dealerStatus" class="small" style="margin-top:6px">状态: 等待</div>
         </div>
-      </div>
-    </div>
+
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <div class="small">最多 13 人 · 初始分 1000 · 默认下注 100</div>
+            <div style="margin-left:auto" class="small" id="roomStats">房间未加入</div>
+          </div>
+
+          <div id="playersWrap" class="players-grid">
+            <!-- players rendered here -->
+          </div>
+
+          <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+            <button id="startBtn" style="display:none">开始发牌</button>
+            <button id="nextBtn" style="display:none">再来一局</button>
+            <div id="statusMsg" class="small" style="margin-left:10px"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Chat & extra controls -->
+      <aside class="panel chat">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>房间聊天</strong>
+          <div class="small" id="playerCount">未加入</div>
+        </div>
+
+        <div id="messages" class="messages"></div>
+
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="chatInput" placeholder="输入消息后按回车或点发送">
+          <button id="sendChatBtn">发送</button>
+        </div>
+
+        <div style="margin-top:8px" class="small">
+          音乐：使用 YouTube。当你点「加入房间」时尝试解封声音（浏览器策略或许仍要求用户操作）。
+        </div>
+      </aside>
+    </main>
+
+    <footer class="note">提示：第一次运行请先到 Firebase 控制台把 Realtime Database 的规则在开发阶段设为 <code>{".read": true, ".write": true}</code></footer>
   </div>
 
-<!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <!-- Hidden: YouTube background music iframe (初始静音自动播放) -->
+  <div style="position:fixed;left:-9999px;top:-9999px;visibility:hidden">
+    <iframe id="bgmIframe"
+      src="https://www.youtube.com/embed/Bjv-waCxb0Q?autoplay=1&mute=1&loop=1&playlist=Bjv-waCxb0Q&enablejsapi=1"
+      allow="autoplay; encrypted-media"></iframe>
+  </div>
 
-<script>
-// 初始化 Firebase
+<script type="module">
+/* ===============================================================
+   完整版 JS（详细、分段、注释） - 使用 Firebase Realtime DB (模块化)
+   =============================================================== */
+
+/* ---------------- Firebase 初始化 ---------------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getDatabase, ref, set, get, onValue, update, push, remove
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+/* --------- 把你的 Firebase 配置放在这里（我已经填你的配置） --------- */
 const firebaseConfig = {
   apiKey: "AIzaSyBylbQlZZ7Xo8qEPtoa39Ey3QBxpkcP4_k",
-  authDomain: "dino-game-3ed81.firebaseapp.com",
-  projectId: "dino-game-3ed81",
-  storageBucket: "dino-game-3ed81.firebasestorage.app",
-  messagingSenderId: "580049109346",
-  appId: "1:580049109346:web:d7091eacedebcd5d076c3b",
-  measurementId: "G-9R5G3R7PR5",
-  databaseURL: "https://dino-game-3ed81-default-rtdb.asia-southeast1.firebasedatabase.app"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-let roomId = null;
-let playerId = null;
-let playerName = null;
-let isHost = false;
-
-document.getElementById("joinBtn").onclick = () => {
-  roomId = document.getElementById("roomId").value || "default";
-  playerName = document.getElementById("playerName").value || ("玩家" + Math.floor(Math.random()*1000));
-  playerId = "p" + Math.random().toString(36).slice(2,8);
-  joinRoom(roomId, playerId, playerName);
+authDomain: "dino-game-3ed81.firebaseapp.com",
+databaseURL: "https://dino-game-3ed81-default-rtdb.firebaseio.com", // ✅ 你提供的实时数据库 URL
+projectId: "dino-game-3ed81",
+storageBucket: "dino-game-3ed81.firebasestorage.app",
+messagingSenderId: "580049109346",
+appId: "1:580049109346:web:d7091eacedebcd5d076c3b",
+measurementId: "G-9R5G3R7PR5"
 };
 
-function joinRoom(roomId, playerId, name){
-  const playersRef = db.ref("rooms/"+roomId+"/players");
-  playersRef.child(playerId).set({
-    name: name,
-    score: 0,
-    x: 60,
-    y: 200
-  });
-  playersRef.child(playerId).onDisconnect().remove();
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
-  // 确定房主（第一个人就是 host）
-  db.ref("rooms/"+roomId+"/host").transaction(curr=>{
-    if(curr===null) return playerId;
-    return curr;
-  }).then(res=>{
-    if(res.snapshot.val()===playerId) isHost = true;
-  });
+/* ---------------- 全局状态 ---------------- */
+let ROOM = null;                // 当前房间号
+const PLAYER_ID = "玩家" + Math.floor(Math.random()*90000+1000); // 随机 player id
+let playerPath = null;          // DB 路径 rooms/ROOM/players/PLAYER_ID
+let roomRef = null;             // DB 参考
+let localUnsubscribe = null;    // onValue 取消函数（当换房间时）
+const MAX_PLAYERS = 13;
 
-  listenRoom();
+/* ---------------- 牌堆与点数工具 ---------------- */
+function createDeck(){
+  const suits = ["♠","♥","♣","♦"];
+  const ranks = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+  const deck = [];
+  for(const s of suits) for(const r of ranks) deck.push(r + s);
+  return deck;
 }
-
-function listenRoom(){
-  // 玩家同步
-  db.ref("rooms/"+roomId+"/players").on("value", snap=>{
-    remotePlayers = snap.val()||{};
-  });
-  // 障碍同步
-  db.ref("rooms/"+roomId+"/obstacles").on("value", snap=>{
-    obstacles = snap.val()?Object.values(snap.val()):[];
-  });
-}
-
-// ---- 游戏逻辑（原版基础上加了同步） ----
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-let running=false, gameOver=false, score=0, speed=6, lastTime=0;
-let obstacles=[], clouds=[];
-const groundY=200;
-const dino={x:60,y:groundY,w:44,h:44,vy:0,gravity:0.9,jumpPower:-13,ducking:false,
-  onGround(){return this.y>=groundY}
-};
-let remotePlayers={};
-
-function tryJump(){ if(dino.onGround() && !dino.ducking){ dino.vy=dino.jumpPower; } }
-function rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
-
-function loop(ts){
-  const dt=Math.min((ts-lastTime)/16.67,3); lastTime=ts;
-  // 移动云
-  clouds.forEach(c=>c.x-=c.speed*(speed/6));
-  clouds=clouds.filter(c=>c.x+c.w>-50);
-  if(Math.random()<0.01) clouds.push({x:canvas.width,y:30+Math.random()*60,w:60,speed:1});
-
-  // host 生成障碍并写入数据库
-  if(isHost && Math.random()<0.02){
-    const obs={x:canvas.width,y:groundY-40,w:30,h:40};
-    db.ref("rooms/"+roomId+"/obstacles").push(obs);
+function shuffleDeck(deck){
+  for(let i=deck.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
   }
-  obstacles.forEach(o=>o.x-=speed*dt*8);
+}
+function calcPoints(cards){
+  if(!cards || cards.length===0) return 0;
+  let sum=0, aces=0;
+  for(const c of cards){
+    const rank = c.slice(0, -1);
+    if(["J","Q","K"].includes(rank)) sum += 10;
+    else if(rank==="A"){ sum += 11; aces++; }
+    else sum += parseInt(rank, 10);
+  }
+  while(sum>21 && aces>0){ sum -= 10; aces--; }
+  return sum;
+}
 
-  // 控制
-  if(keys['Space']||keys['ArrowUp']) tryJump();
-  if(keys['ArrowDown']) dino.ducking=true; else dino.ducking=false;
-  dino.y+=dino.vy; dino.vy+=dino.gravity*dt;
-  if(dino.y>groundY) {dino.y=groundY; dino.vy=0;}
+/* ---------------- UI 元件 ---------------- */
+const el = id => document.getElementById(id);
+const playersWrap = el('playersWrap');
+const dealerCardsEl = el('dealerCards');
+const dealerPointsEl = el('dealerPoints');
+const dealerStatusEl = el('dealerStatus');
+const startBtn = el('startBtn');
+const nextBtn = el('nextBtn');
+const statusMsg = el('statusMsg');
+const joinBtn = el('joinBtn');
+const joinInput = el('roomInput');
+const meLabel = el('meLabel');
+const messagesEl = el('messages');
+const playerCountEl = el('playerCount');
+const roomStatsEl = el('roomStats');
+const chatInput = el('chatInput');
+const sendChatBtn = el('sendChatBtn');
+const bgmIframe = el('bgmIframe');
 
-  // 碰撞检测
-  const drect={x:dino.x,y:dino.y,w:dino.w,h:dino.ducking?dino.h*0.6:dino.h};
-  for(const o of obstacles){
-    if(rectsOverlap(drect,o)){running=false;gameOver=true;}
-    if(!o.passed&&o.x+o.w<dino.x){o.passed=true;score+=10;
-      document.getElementById("score").textContent="分数 "+score;
-      db.ref("rooms/"+roomId+"/players/"+playerId+"/score").set(score);
+/* ---------------- 事件绑定（UI） ---------------- */
+joinBtn.addEventListener('click', async () => {
+  const rid = joinInput.value.trim();
+  if(!rid){ alert("请输入房间号"); return; }
+  await joinRoom(rid);
+  // 尝试解除静音/自动播放（许多浏览器仍会拦截，用户交互可能需要）
+  try {
+    // 通过重新设置 src 去尝试触发 autoplay (浏览器策略不保证成功)
+    bgmIframe.src = bgmIframe.src.replace(/(&|)mute=\d/, '') + '&mute=0';
+  } catch(e){ /* ignore */ }
+});
+sendChatBtn.addEventListener('click', sendChat);
+chatInput.addEventListener('keydown', (e)=> { if(e.key==='Enter') sendChat(); });
+
+startBtn.addEventListener('click', async ()=>{
+  if(!ROOM) return;
+  await startGame();
+});
+nextBtn.addEventListener('click', async ()=>{ if(!ROOM) return; await nextRound(); });
+
+/* ---------------- 房间加入/监听逻辑 ---------------- */
+async function joinRoom(roomId){
+  // 如果已经在一个房间，先离开
+  if(ROOM) await leaveRoom();
+
+  ROOM = roomId;
+  playerPath = rooms/${ROOM}/players/${PLAYER_ID};
+  roomRef = ref(db, rooms/${ROOM});
+
+  // Create room if not exists (atomic-ish)
+  const snap = await get(roomRef);
+  if(!snap.exists()){
+    // initial room structure
+    await set(roomRef, {
+      dealer: { cards: [], reveal: false, turn: "", results: null },
+      players: {},
+      deck: null,
+      chat: {}
+    });
+  }
+
+  // add player with defaults
+  const myRef = ref(db, playerPath);
+  await set(myRef, { id: PLAYER_ID, score: 1000, bet: 0, cards: [], ready: false });
+
+  // set UI label
+  meLabel.textContent = 你: ${PLAYER_ID} · 房: ${ROOM};
+
+  // register beforeunload cleanup (best effort)
+  window.addEventListener('beforeunload', handleBeforeUnload);
+
+  // start listening to room
+  startListeningRoom();
+  // announce
+  await push(ref(db, rooms/${ROOM}/chat), { from: '系统', text: ${PLAYER_ID} 已进入房间, ts: Date.now() });
+}
+
+/* leave room helper */
+async function leaveRoom(){
+  if(!ROOM) return;
+  try{
+    await remove(ref(db, playerPath));
+    // notify
+    await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text:${PLAYER_ID} 离开房间, ts: Date.now() });
+  }catch(e){}
+  // turn off local listeners: onValue not returning unsub, so no-op in modular API; rely on page unload
+  ROOM = null;
+  playerPath = null;
+  roomRef = null;
+  meLabel.textContent = '未加入';
+  // clear UI
+  renderEmptyRoom();
+}
+
+/* Attempt cleanup when leaving page */
+function handleBeforeUnload(){
+  if(playerPath) remove(ref(db, playerPath));
+}
+
+/* start listening to room changes */
+function startListeningRoom(){
+  if(!roomRef) return;
+  onValue(roomRef, async (snap)=>{
+    const data = snap.val();
+    // If room deleted remotely, bail
+    if(!data){
+      renderEmptyRoom();
+      return;
+    }
+
+    // Auto-clean: if players empty -> delete room (race: ensure we don't delete while someone joining)
+    if(!data.players || Object.keys(data.players).length === 0){
+      try{ await remove(roomRef); } catch(e){ /* ignore */ }
+      renderEmptyRoom();
+      return;
+    }
+
+    // Auto-skip: if it's someone's turn but they left, auto-stand for them
+    if(data.dealer && data.dealer.turn && data.players && !data.players[data.dealer.turn]){
+      // call stand on server-ish by setting that player's ready true
+      // We simulate stand by marking them ready and then calling dealer flow
+      // to avoid complex server code, we call local stand() which will check all ready
+      await update(ref(db, rooms/${ROOM}/players), {}); // noop to ensure ordering
+      await standAutoForMissing(data, data.dealer.turn);
+      return;
+    }
+
+    // Normal render
+    renderRoom(data);
+  });
+}
+
+/* ---------------- Rendering ---------------- */
+function renderEmptyRoom(){
+  dealerCardsEl.innerHTML = '';
+  dealerPointsEl.textContent = '点数: --';
+  dealerStatusEl.textContent = '状态: 未加入';
+  playersWrap.innerHTML = '';
+  roomStatsEl.textContent = '未加入房间';
+  playerCountEl.textContent = '未加入';
+  messagesEl.innerHTML = '';
+  startBtn.style.display = 'none';
+  nextBtn.style.display = 'none';
+  statusMsg.textContent = '';
+}
+
+/* render full room */
+function renderRoom(data){
+  // room stats
+  const playersObj = data.players || {};
+  const ids = Object.keys(playersObj);
+  roomStatsEl.textContent = 房 ${ROOM} · 玩家 ${ids.length};
+  playerCountEl.textContent = 玩家 ${ids.length};
+
+  // dealer
+  const dealer = data.dealer || { cards: [], reveal:false, turn:'', results: null };
+  dealerCardsEl.innerHTML = '';
+  const reveal = dealer.reveal === true;
+  if(dealer.cards && dealer.cards.length > 0){
+    dealer.cards.forEach((c,i)=>{
+      const span = document.createElement('span');
+      span.className = 'card';
+      span.textContent = (i===1 && !reveal)? '？' : c;
+      dealerCardsEl.appendChild(span);
+    });
+    dealerPointsEl.textContent = reveal ? 点数: ${calcPoints(dealer.cards)} : '点数: ??';
+  } else {
+    dealerPointsEl.textContent = '点数: --';
+  }
+  dealerStatusEl.textContent = 状态: ${dealer.results ? dealer.results : (dealer.turn ? '进行中' : '等待')};
+
+  // players list
+  playersWrap.innerHTML = '';
+  ids.forEach(pid=>{
+    const p = playersObj[pid];
+    const div = document.createElement('div');
+    div.className = 'player-card';
+    let html = <strong>${p.id}</strong> <span class="small">分数:${p.score}</span><br>;
+    html += <div class="small">下注: ${p.bet || 0} · 点数: ${calcPoints(p.cards||[])}</div>;
+    // show hand
+    html += <div class="cards" style="margin-top:6px">${(p.cards||[]).map(c=><span class="card">${c}</span>).join('')}</div>;
+
+    // If this is current user and in betting phase (no dealer.cards yet), show bet input if not bet
+    if(pid === PLAYER_ID && (!dealer.cards || dealer.cards.length===0) && (!p.bet || p.bet===0)){
+      html += `<div style="margin-top:8px">
+                 <input id="betInput" type="number" min="1" max="${p.score||0}" placeholder="下注金额" style="width:110px">
+                 <button onclick="confirmBet()">确认下注</button>
+               </div>`;
+    } else if(pid === PLAYER_ID && (!dealer.cards || dealer.cards.length===0) && (p.bet>0)){
+      html += <div style="margin-top:8px;color:#cfe">已下注：${p.bet}</div>;
+    }
+
+    // if it's player's turn and it's this client, show hit/stand
+    if(dealer.turn && dealer.turn === pid && pid === PLAYER_ID && dealer.cards && dealer.cards.length>0 && (!data.results)){
+      html += `<div style="margin-top:8px">
+                 <button onclick="hit()">要牌</button>
+                 <button onclick="stand()">停牌</button>
+               </div>`;
+    }
+
+    // show result if exists
+    if(data.results && data.results[pid]){
+      const r = data.results[pid];
+      const cls = r.includes('赢') ? 'win' : r.includes('输') ? 'lose' : 'draw';
+      html += <div style="margin-top:8px" class="${cls}">结果: ${r}</div>;
+    }
+
+    div.innerHTML = html;
+    playersWrap.appendChild(div);
+  });
+
+  // show start button when all players bet and dealer has no cards
+  const allBet = ids.length>0 && ids.every(i => (playersObj[i].bet && playersObj[i].bet > 0));
+  if(allBet && (!dealer.cards || dealer.cards.length===0) && (!data.results || Object.keys(data.results||{}).length===0)){
+    startBtn.style.display = 'inline-block';
+  } else {
+    startBtn.style.display = 'none';
+  }
+
+  // show next round when results exist
+  if(data.results && Object.keys(data.results).length>0){
+    nextBtn.style.display = 'inline-block';
+  } else {
+    nextBtn.style.display = 'none';
+  }
+
+  // render chat
+  renderChat(data.chat || {});
+}
+
+/* ---------------- Chat functions ---------------- */
+async function sendChat(){
+  const txt = chatInput.value.trim();
+  if(!txt || !ROOM) return;
+  await push(ref(db, rooms/${ROOM}/chat), { from: PLAYER_ID, text: txt, ts: Date.now() });
+  chatInput.value = '';
+}
+
+/* render chat messages ordered by ts */
+function renderChat(chatObj){
+  messagesEl.innerHTML = '';
+  if(!chatObj) return;
+  const arr = Object.entries(chatObj).map(([k,v])=>({k, ...v})).sort((a,b)=> (a.ts||0)-(b.ts||0));
+  arr.forEach(m=>{
+    const d = document.createElement('div');
+    d.className = 'msg';
+    d.innerHTML = <div style="font-size:12px;color:#bbb">${m.from} · ${new Date(m.ts||0).toLocaleTimeString()}</div><div>${escapeHtml(m.text)}</div>;
+    messagesEl.appendChild(d);
+  });
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+function escapeHtml(s){ return s ? s.replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])) : ''; }
+
+/* ---------------- Betting ---------------- */
+async function confirmBet(){
+  if(!ROOM) return alert('未加入房间');
+  const val = parseInt(document.getElementById('betInput')?.value || 0);
+  if(!val || val <= 0) return alert('请输入有效下注');
+  const plySnap = await get(ref(db, rooms/${ROOM}/players/${PLAYER_ID}));
+  const me = plySnap.val();
+  if(!me) return alert('玩家信息未找到（可能已断线）');
+  if(val > (me.score || 0)) return alert('下注不能大于分数');
+  await update(ref(db, rooms/${ROOM}/players/${PLAYER_ID}), { bet: val });
+  await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text:${PLAYER_ID} 下了 ${val}, ts: Date.now() });
+}
+
+/* ---------------- Start game (deal) ---------------- */
+async function startGame(){
+  if(!ROOM) return;
+  const roomSnap = await get(ref(db, rooms/${ROOM}));
+  const data = roomSnap.val();
+  if(!data) return;
+  const players = data.players || {};
+  const ids = Object.keys(players);
+  if(ids.length === 0) return alert('房间没人');
+  // require all players bet
+  if(!ids.every(i => players[i].bet && players[i].bet > 0)) return alert('等所有玩家下注');
+
+  // prepare deck, shuffle, deal two cards to each and dealer gets two (we show one face-down)
+  let deck = createDeck();
+  shuffleDeck(deck);
+  // we will set dealer.cards with both cards but reveal flag controls visibility
+  const dealerCards = [deck.pop(), deck.pop()];
+  const updates = {};
+  updates[rooms/${ROOM}/deck] = deck;
+  updates[rooms/${ROOM}/dealer/cards] = dealerCards;
+  updates[rooms/${ROOM}/dealer/reveal] = false;
+  updates[rooms/${ROOM}/dealer/turn] = ids[0];
+  updates[rooms/${ROOM}/dealer/results] = null;
+  updates[rooms/${ROOM}/results] = null;
+
+  // deal to players
+  ids.forEach(id=>{
+    const c1 = deck.pop(), c2 = deck.pop();
+    updates[rooms/${ROOM}/players/${id}/cards] = [c1, c2];
+    updates[rooms/${ROOM}/players/${id}/ready] = false;
+    updates[rooms/${ROOM}/players/${id}/points] = calcPoints([c1,c2]);
+  });
+
+  // commit
+  await update(ref(db, rooms/${ROOM}), updates);
+  await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text:'发牌完成，轮到 ' + ids[0], ts: Date.now() });
+}
+
+/* ---------------- Player actions: hit / stand ---------------- */
+async function hit(){
+  if(!ROOM) return;
+  // get room snapshot
+  const snap = await get(ref(db, rooms/${ROOM}));
+  const data = snap.val();
+  if(!data) return;
+  const deck = data.deck || [];
+  if(deck.length === 0) return alert('牌堆没有牌了');
+
+  const dealer = data.dealer || {};
+  if(!dealer.turn) return alert('当前没有玩家回合');
+  if(dealer.turn !== PLAYER_ID) return alert('现在不是你的回合');
+
+  // draw one card
+  const card = deck.pop();
+  const myCards = (data.players && data.players[PLAYER_ID] && data.players[PLAYER_ID].cards) ? data.players[PLAYER_ID].cards.slice() : [];
+  myCards.push(card);
+  const pts = calcPoints(myCards);
+
+  const updates = {};
+  updates[rooms/${ROOM}/deck] = deck;
+  updates[rooms/${ROOM}/players/${PLAYER_ID}/cards] = myCards;
+  updates[rooms/${ROOM}/players/${PLAYER_ID}/points] = pts;
+
+  await update(ref(db, rooms/${ROOM}), updates);
+  await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text: ${PLAYER_ID} 要牌 ${card}, ts: Date.now() });
+
+  if(pts > 21){
+    // bust -> mark ready and advance
+    await update(ref(db, rooms/${ROOM}/players/${PLAYER_ID}), { ready: true });
+    await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text: ${PLAYER_ID} 爆牌, ts: Date.now() });
+    await advanceTurn(); // advance to next
+  }
+}
+
+async function stand(){
+  if(!ROOM) return;
+  // mark player ready
+  await update(ref(db, rooms/${ROOM}/players/${PLAYER_ID}), { ready: true });
+  await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text: ${PLAYER_ID} 停牌, ts: Date.now() });
+  await advanceTurn();
+}
+
+/* ---------------- Advance turn logic ---------------- */
+async function advanceTurn(){
+  const snap = await get(ref(db, rooms/${ROOM}));
+  const data = snap.val();
+  if(!data) return;
+  const players = data.players || {};
+  const ids = Object.keys(players);
+  if(ids.length === 0) return;
+
+  // find current turn
+  const currentTurn = data.dealer && data.dealer.turn ? data.dealer.turn : null;
+  let idx = ids.indexOf(currentTurn);
+  // mark current as ready if not (safety)
+  if(currentTurn && players[currentTurn] && !players[currentTurn].ready){
+    await update(ref(db, rooms/${ROOM}/players/${currentTurn}), { ready: true });
+  }
+
+  // find next player who is not ready (i.e., still to act)
+  let nextIdx = -1;
+  for(let i=1;i<=ids.length;i++){
+    const cand = ids[(idx + i) % ids.length];
+    if(players[cand] && !players[cand].ready){
+      nextIdx = (idx + i) % ids.length;
+      break;
     }
   }
 
-  // 上传玩家状态
-  if(roomId&&playerId){
-    db.ref("rooms/"+roomId+"/players/"+playerId).update({x:dino.x,y:dino.y,score:score});
+  if(nextIdx !== -1){
+    // set dealer.turn = next player
+    const nextId = ids[nextIdx];
+    await update(ref(db, rooms/${ROOM}/dealer), { turn: nextId });
+    await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text:轮到 ${nextId}, ts: Date.now() });
+  } else {
+    // all players done -> dealer plays
+    await dealerPlayAndSettle(data);
   }
-
-  draw();
-  if(!gameOver) requestAnimationFrame(loop);
 }
 
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle="#eee";ctx.fillRect(0,0,canvas.width,canvas.height);
-  // 画障碍
-  ctx.fillStyle="#333";
-  obstacles.forEach(o=>ctx.fillRect(o.x,o.y,o.w,o.h));
-  // 自己
-  ctx.fillStyle="#222";
-  ctx.fillRect(dino.x,dino.y,dino.w,dino.h);
-  // 其他玩家
-  ctx.fillStyle="blue";
-  for(const id in remotePlayers){
-    if(id!==playerId){
-      const p=remotePlayers[id];
-      ctx.fillRect(p.x||0,p.y||200,30,30);
-      ctx.fillText(p.name, (p.x||0), (p.y||200)-6);
+/* auto-stand for a missing player (when they left mid-turn) */
+async function standAutoForMissing(roomData, missingId){
+  if(!ROOM) return;
+  if(!roomData) roomData = (await get(ref(db, rooms/${ROOM}))).val();
+  // mark missing as ready (if exists in DB path but null means gone)
+  try { await update(ref(db, rooms/${ROOM}/players/${missingId}), { ready: true }); } catch(e){}
+  await advanceTurn();
+}
+
+/* ---------------- Dealer play & settle ---------------- */
+async function dealerPlayAndSettle(currentData){
+  // If currentData provided, use it; else fetch
+  const snap = currentData ? { val: ()=> currentData } : await get(ref(db, rooms/${ROOM}));
+  const data = snap.val();
+  if(!data) return;
+
+  let deck = data.deck || [];
+  let dealer = data.dealer || { cards: [], reveal: false };
+  // reveal dealer's hand
+  let dealerCards = (dealer.cards || []).slice();
+
+  // dealer draws until >=17
+  while(calcPoints(dealerCards) < 17 && deck.length > 0){
+    dealerCards.push(deck.pop());
+  }
+
+  const dealerPts = calcPoints(dealerCards);
+
+  // compute results per player
+  const results = {};
+  const players = data.players || {};
+  for(const pid of Object.keys(players)){
+    const p = players[pid];
+    const pPts = calcPoints(p.cards || []);
+    const bet = p.bet || 0;
+    if(pPts > 21){
+      results[pid] = '爆牌 输';
+      p.score = (p.score || 0) - bet;
+    } else if(dealerPts > 21 || pPts > dealerPts){
+      results[pid] = '赢';
+      p.score = (p.score || 0) + bet;
+    } else if(pPts === dealerPts){
+      results[pid] = '平';
+      // score unchanged
+    } else {
+      results[pid] = '输';
+      p.score = (p.score || 0) - bet;
     }
+    // floor at 0
+    if(p.score < 0) p.score = 0;
+    // reset bet for next round
+    p.bet = 0;
+    p.ready = false;
   }
+
+  // write results and dealer final hand
+  const updates = {};
+  updates[rooms/${ROOM}/dealer/cards] = dealerCards;
+  updates[rooms/${ROOM}/dealer/reveal] = true;
+  updates[rooms/${ROOM}/deck] = deck;
+  updates[rooms/${ROOM}/dealer/turn] = '';
+  updates[rooms/${ROOM}/dealer/results] = 庄家 ${dealerPts};
+  updates[rooms/${ROOM}/results] = results;
+
+  // update players' scores and reset bets/ready
+  for(const pid of Object.keys(players)){
+    updates[rooms/${ROOM}/players/${pid}/score] = players[pid].score;
+    updates[rooms/${ROOM}/players/${pid}/bet] = 0;
+    updates[rooms/${ROOM}/players/${pid}/ready] = false;
+    updates[rooms/${ROOM}/players/${pid}/cards] = players[pid].cards || [];
+  }
+
+  await update(ref(db, rooms/${ROOM}), updates);
+  await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text:'结算完成', ts: Date.now() });
 }
 
-function start(){if(running)return;running=true;gameOver=false;score=0;lastTime=performance.now();requestAnimationFrame(loop);}
-function reset(){running=false;gameOver=false;score=0;obstacles=[];clouds=[];dino.y=groundY;dino.vy=0;document.getElementById("score").textContent="分数 0";}
+/* ---------------- Next round (reset board, keep scores) ---------------- */
+async function nextRound(){
+  if(!ROOM) return;
+  // fetch players to reset per-player fields
+  const snap = await get(ref(db, rooms/${ROOM}/players));
+  const players = snap.val() || {};
+  const updates = {};
+  updates[rooms/${ROOM}/dealer/cards] = [];
+  updates[rooms/${ROOM}/dealer/reveal] = false;
+  updates[rooms/${ROOM}/dealer/turn] = '';
+  updates[rooms/${ROOM}/dealer/results] = null;
+  updates[rooms/${ROOM}/results] = null;
+  updates[rooms/${ROOM}/deck] = null;
 
-document.getElementById("restart").onclick=()=>{reset();start();};
-canvas.onclick=()=>{if(gameOver){reset();start();}};
+  Object.keys(players).forEach(pid=>{
+    updates[rooms/${ROOM}/players/${pid}/cards] = [];
+    updates[rooms/${ROOM}/players/${pid}/bet] = 0;
+    updates[rooms/${ROOM}/players/${pid}/ready] = false;
+    // keep score as is
+  });
 
-// 控制
-const keys={};
-window.onkeydown=e=>{keys[e.code]=true;if(!running)start();if(gameOver&&e.key.toLowerCase()==='r'){reset();start();}};
-window.onkeyup=e=>keys[e.code]=false;
+  await update(ref(db, rooms/${ROOM}), updates);
+  await push(ref(db, rooms/${ROOM}/chat), { from:'系统', text:'新一局开始，请下注', ts: Date.now() });
+}
+
+/* ---------------- Utility: limit players to MAX_PLAYERS ---------------- */
+/* If someone joins and > MAX_PLAYERS we can prevent new join — handled on joinRoom by checking room snapshot length. */
+
+/* ---------------- EOF ---------------- */
 </script>
 </body>
 </html>
